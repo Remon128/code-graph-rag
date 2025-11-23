@@ -26,11 +26,56 @@ class CodeRetriever:
             LIMIT 1
         """
         params = {"qn": qualified_name}
-        try:
-            # Use the ingestor's public interface
-            results = self.ingestor.fetch_all(query, params)
+        
+        # Use context manager to ensure connection is properly managed
+        with self.ingestor:
+            try:
+                results = self.ingestor.fetch_all(query, params)
 
-            if not results:
+                if not results:
+                    return CodeSnippet(
+                        qualified_name=qualified_name,
+                        source_code="",
+                        file_path="",
+                        line_start=0,
+                        line_end=0,
+                        found=False,
+                        error_message="Entity not found in graph.",
+                    )
+
+                res = results[0]
+                file_path_str = res.get("path")
+                start_line = res.get("start")
+                end_line = res.get("end")
+
+                if not all([file_path_str, start_line, end_line]):
+                    return CodeSnippet(
+                        qualified_name=qualified_name,
+                        source_code="",
+                        file_path=file_path_str or "",
+                        line_start=0,
+                        line_end=0,
+                        found=False,
+                        error_message="Graph entry is missing location data.",
+                    )
+
+                full_path = self.project_root / file_path_str
+                with full_path.open("r", encoding="utf-8") as f:
+                    all_lines = f.readlines()
+
+                snippet_lines = all_lines[start_line - 1 : end_line]
+                source_code = "".join(snippet_lines)
+
+                return CodeSnippet(
+                    qualified_name=qualified_name,
+                    source_code=source_code,
+                    file_path=file_path_str,
+                    line_start=start_line,
+                    line_end=end_line,
+                    docstring=res.get("docstring"),
+                )
+            except Exception as e:
+                logger.error(f"[CodeRetriever] Error: {e}", exc_info=True)
                 return CodeSnippet(
                     qualified_name=qualified_name,
                     source_code="",
@@ -38,51 +83,8 @@ class CodeRetriever:
                     line_start=0,
                     line_end=0,
                     found=False,
-                    error_message="Entity not found in graph.",
+                    error_message=str(e),
                 )
-
-            res = results[0]
-            file_path_str = res.get("path")
-            start_line = res.get("start")
-            end_line = res.get("end")
-
-            if not all([file_path_str, start_line, end_line]):
-                return CodeSnippet(
-                    qualified_name=qualified_name,
-                    source_code="",
-                    file_path=file_path_str or "",
-                    line_start=0,
-                    line_end=0,
-                    found=False,
-                    error_message="Graph entry is missing location data.",
-                )
-
-            full_path = self.project_root / file_path_str
-            with full_path.open("r", encoding="utf-8") as f:
-                all_lines = f.readlines()
-
-            snippet_lines = all_lines[start_line - 1 : end_line]
-            source_code = "".join(snippet_lines)
-
-            return CodeSnippet(
-                qualified_name=qualified_name,
-                source_code=source_code,
-                file_path=file_path_str,
-                line_start=start_line,
-                line_end=end_line,
-                docstring=res.get("docstring"),
-            )
-        except Exception as e:
-            logger.error(f"[CodeRetriever] Error: {e}", exc_info=True)
-            return CodeSnippet(
-                qualified_name=qualified_name,
-                source_code="",
-                file_path="",
-                line_start=0,
-                line_end=0,
-                found=False,
-                error_message=str(e),
-            )
 
 
 def create_code_retrieval_tool(code_retriever: CodeRetriever) -> Tool:
