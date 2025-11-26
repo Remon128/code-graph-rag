@@ -27,6 +27,7 @@ dependencies = [
     "streamlit>=1.39.0",
     "streamlit-chat>=0.1.1",
     "requests>=2.32.0",
+    "groq>=0.36.0",
 ]
 
 [project.scripts]
