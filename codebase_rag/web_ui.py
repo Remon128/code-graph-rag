@@ -121,7 +121,7 @@ def main():
 
     # Header with Ejada Logo
     try:
-        logo = Image.open("/home/aahafez/code-graph-rag/ejada_logo.png")
+        logo = Image.open("assets/ejada_logo.png")
         st.image(logo, width=300)
     except Exception as e:
         st.error(f"Could not load logo: {e}")
