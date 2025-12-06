@@ -1,35 +1,35 @@
 import asyncio
-import uuid
-from contextlib import asynccontextmanager
+import os
+import sys
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, HTTPException
-from fastapi.middleware.cors import CORSMiddleware
 from loguru import logger
-from pydantic import BaseModel
 
-import os
-import sys
-
-# Get the directory of codebase_rag
+# ----------------------------------------
+# Make sure we can import codebase_rag
+# ----------------------------------------
 current_dir = os.path.dirname(os.path.abspath(__file__))
+repo_root = current_dir  # this script is in the repo root
 
-# Add parent directory so package imports work
-parent_dir = os.path.abspath(os.path.join(current_dir, ".."))
-sys.path.insert(0, parent_dir)
+# Add repo root so "codebase_rag" is importable
+if repo_root not in sys.path:
+    sys.path.insert(0, repo_root)
 
-# Make codebase_rag importable as a package
-sys.path.insert(0, current_dir)
-
-
+# Now we can import the package
 from codebase_rag.config import settings
 from codebase_rag.graph_updater import MemgraphIngestor
 from codebase_rag.services.llm import CypherGenerator, create_rag_orchestrator
 from codebase_rag.tools.code_retrieval import CodeRetriever, create_code_retrieval_tool
 from codebase_rag.tools.codebase_query import create_query_tool
-from codebase_rag.tools.directory_lister import DirectoryLister, create_directory_lister_tool
-from codebase_rag.tools.document_analyzer import DocumentAnalyzer, create_document_analyzer_tool
+from codebase_rag.tools.directory_lister import (
+    DirectoryLister,
+    create_directory_lister_tool,
+)
+from codebase_rag.tools.document_analyzer import (
+    DocumentAnalyzer,
+    create_document_analyzer_tool,
+)
 from codebase_rag.tools.file_editor import FileEditor, create_file_editor_tool
 from codebase_rag.tools.file_reader import FileReader, create_file_reader_tool
 from codebase_rag.tools.file_writer import FileWriter, create_file_writer_tool
@@ -39,28 +39,37 @@ from codebase_rag.tools.semantic_search import (
 )
 from codebase_rag.tools.shell_command import ShellCommander, create_shell_command_tool
 
+# 👉 import the Typer command function
+from codebase_rag.main import start as cli_start
+
+# Globals for the agent
+rag_agent: Any | None = None
+ingestor: MemgraphIngestor | None = None
+project_root: Path | None = None
 
 
-def main_factory():
-    """Initialize services on startup and cleanup on shutdown."""
+# ----------------------------------------
+# Factory: build tools + agent (same as API)
+# ----------------------------------------
+def main_factory() -> tuple[Any, MemgraphIngestor, Path]:
+    """Initialize services and create the RAG agent (without CLI)."""
     global rag_agent, ingestor, project_root
-    
-    logger.info("Initializing FastAPI server...")
-    
-    # Initialize project root
+
+    logger.info("Initializing RAG agent for debug runner...")
+
     project_root = Path(settings.TARGET_REPO_PATH).resolve()
-    
-    # Initialize Memgraph connection
-    # Note: We don't use context manager here because tools manage their own connections
+    logger.info(f"PROJECT_ROOT = {project_root}")
+
+    # Shared Memgraph ingestor (tools will use it as a context manager)
     ingestor = MemgraphIngestor(
         host=settings.MEMGRAPH_HOST,
         port=settings.MEMGRAPH_PORT,
         batch_size=settings.MEMGRAPH_BATCH_SIZE,
     )
-    
-    logger.info("Memgraph ingestor initialized (tools will manage connections)")
-    
-    # Initialize all tools and agent
+
+    logger.info("Memgraph ingestor created (connection handled by tools).")
+
+    # Initialize tools
     cypher_generator = CypherGenerator()
     code_retriever = CodeRetriever(project_root=str(project_root), ingestor=ingestor)
     file_reader = FileReader(project_root=str(project_root))
@@ -71,8 +80,8 @@ def main_factory():
     )
     directory_lister = DirectoryLister(project_root=str(project_root))
     document_analyzer = DocumentAnalyzer(project_root=str(project_root))
-    
-    # Create tools
+
+    # Create pydantic-ai tools
     query_tool = create_query_tool(ingestor, cypher_generator, None)
     code_tool = create_code_retrieval_tool(code_retriever)
     file_reader_tool = create_file_reader_tool(file_reader)
@@ -83,8 +92,7 @@ def main_factory():
     document_analyzer_tool = create_document_analyzer_tool(document_analyzer)
     semantic_search_tool = create_semantic_search_tool()
     function_source_tool = create_get_function_source_tool()
-    
-    # Create RAG agent
+
     rag_agent = create_rag_orchestrator(
         tools=[
             query_tool,
@@ -99,93 +107,89 @@ def main_factory():
             function_source_tool,
         ]
     )
-    
+
     return rag_agent, ingestor, project_root
 
 
-
-def chat(query: str):
-    """
-    Process a chat message and return the agent's response.
-    """
-    # if not rag_agent:
-    #     raise HTTPException(status_code=500, detail="RAG agent not initialized")
-    
-    # if not ingestor:
-    #     raise HTTPException(status_code=500, detail="Memgraph connection not available")
-    
-    # # Get or create session
-    # session_id = request.session_id or str(uuid.uuid4())
-    
-    # if session_id not in sessions:
-    #     sessions[session_id] = {
-    #         "message_history": [],
-    #         "created_at": asyncio.get_event_loop().time(),
-    #     }
-    
-    # session = sessions[session_id]
-    
-    try:
-        # logger.info(f"Processing message for session {session_id}: {request.message[:100]}...")
-        
-        # Run the agent
+def ensure_agent() -> None:
+    """Initialize the agent once, lazily."""
+    global rag_agent, ingestor, project_root
+    if rag_agent is None:
         rag_agent, ingestor, project_root = main_factory()
-        response = rag_agent.run(query=query)
-
-        print("Response:", response)
-        # Update message history
-        # session["message_history"].extend(response.new_messages())
-        
-        # logger.info(f"Response generated for session {session_id}")
-        
-        # return ChatResponse(
-        #     response=response.output,
-        #     session_id=session_id,
-        #     status="success"
-        # )
-        
-    except Exception as e:
-        print(e)
-        # Use repr to safely log any error without KeyError issues
-        # error_str = repr(e) if hasattr(e, '__repr__') else str(type(e))
-        # logger.error(f"Error processing chat message: {error_str}", exc_info=True)
-        
-        # # Provide user-friendly error messages
-        # error_detail = str(e)
-        
-        # # Check for specific error types
-        # if "context_length_exceeded" in error_detail.lower():
-        #     error_detail = "The conversation has become too long. Please clear the chat and start a new session."
-        # elif "tool_use_failed" in error_detail.lower():
-        #     error_detail = "The AI encountered an issue using tools. Please try rephrasing your question or clear the chat."
-        # elif "cypher error" in error_detail.lower() or "parsing error" in error_detail.lower():
-        #     error_detail = "The database query was malformed. This is usually temporary - please try asking your question differently or clear the chat."
-        # elif not error_detail or error_detail == "":
-        #     error_detail = "An unknown error occurred. Please try again or clear the chat."
-        
-        # raise HTTPException(status_code=500, detail=f"Error: {error_detail}")
 
 
-if __name__ == "__main__":
+# ----------------------------------------
+# 1 RUN INDEXING + EMBEDDINGS (what CLI does)
+# ----------------------------------------
+def run_indexing() -> None:
+    """
+    Programmatic equivalent of:
+        python -m codebase_rag.main start 
+            --repo-path /home/aahafez/code-graph-rag/data2 
+            --update-graph
+    """
+    repo_path = "/home/aahafez/code-graph-rag/data2"
+
+    logger.info("===================================================")
+    logger.info("Starting GRAPH UPDATE via codebase_rag.main.start()")
+    logger.info(f"Repo path: {repo_path}")
+    logger.info("===================================================")
+
+    # This calls the same Typer command function that the CLI uses.
+    # Put breakpoints in:
+    #   - start()
+    #   - GraphUpdater.__init__ / GraphUpdater.run
+    #   - GraphUpdater._generate_semantic_embeddings
+    cli_start(
+        repo_path=repo_path,
+        update_graph=True,
+        clean=False,
+        output=None,
+        orchestrator=None,
+        cypher=None,
+        no_confirm=False,
+        batch_size=None,
+    )
+
+    logger.info("===== GRAPH UPDATE FINISHED (returned from start) =====")
+
+
+# ----------------------------------------
+# 2 CHAT LOOP USING THE AGENT
+# ----------------------------------------
+async def chat_once(query: str) -> None:
+    """Run a single query through the RAG agent and print the answer."""
+    ensure_agent()
+    # rag_agent.run is async – we must await it
+    result = await rag_agent.run(query, message_history=[])
+    print("\nAssistant:", result.output, "\n")
+
+
+def chat_loop() -> None:
+    """Simple blocking REPL that uses chat_once via asyncio."""
     while True:
-        user_input = input("You: ")
-        chat(user_input)
+        user_input = input("You: ").strip()
+        if not user_input:
+            print("Empty line -> exit.")
+            break
+        try:
+            asyncio.run(chat_once(user_input))
+        except KeyboardInterrupt:
+            print("\nInterrupted, exiting chat loop.")
+            break
+        except Exception as e:
+            print("Error in chat:", e)
 
-def main():
-    empty_count = 0
 
-    while True:
-        query = input("Enter query: ")
+# ----------------------------------------
+# ENTRY POINT
+# ----------------------------------------
+def main() -> None:
+    # STEP 1: run indexing + embedding generation first
+    run_indexing()
 
-        if query == "":
-            empty_count += 1
-            if empty_count == 2:
-                print("Exiting...")
-                break
-        else:
-            empty_count = 0
-            print("You entered:", query)
-            chat(query=query)
+    # STEP 2: then enter interactive chat, using the DB + embeddings you just built
+    chat_loop()
 
 
 if __name__ == "__main__":

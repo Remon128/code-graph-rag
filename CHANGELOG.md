@@ -20,3 +20,13 @@ codebase_rag/prompts.py
 codebase_rag/tools/code_retrieval.py
 codebase_rag/tools/codebase_query.py
 pyproject.toml
+
+
+
+## PR #3 Ali 12/6/2025
+
+## modified 
+codebase_rag/cmd_tool.py
+codebase_rag/parsers/definition_processor.py
+codebase_rag/parsers/java_type_inference.py
+codebase_rag/graph_updater.py
