@@ -458,13 +458,29 @@ class GraphUpdater:
 
             # Query database for all Function and Method nodes with their source info
             query = """
-            MATCH (m:Module)-[:DEFINES]->(n)
-            WHERE n:Function OR n:Method
-            RETURN id(n) AS node_id, n.qualified_name AS qualified_name,
-                   n.start_line AS start_line, n.end_line AS end_line,
-                   m.path AS path
-            ORDER BY n.qualified_name
-            """
+                MATCH (m:Module)-[:DEFINES]->(:Class)-[:DEFINES_METHOD]->(n:Method)
+                RETURN id(n) AS node_id, n.qualified_name AS qualified_name,
+                    n.start_line AS start_line, n.end_line AS end_line,
+                    m.path AS path
+                UNION
+                MATCH (m:Module)-[:CALLS]->(n:Method)
+                RETURN id(n) AS node_id, n.qualified_name AS qualified_name,
+                    n.start_line AS start_line, n.end_line AS end_line,
+                    m.path AS path
+                UNION
+                MATCH (m:Module)-[:DEFINES]->(n:Function)
+                RETURN id(n) AS node_id, n.qualified_name AS qualified_name,
+                    n.start_line AS start_line, n.end_line AS end_line,
+                    m.path AS path
+                UNION
+                MATCH (m:Module)-[:DEFINES]->(:Function)-[:DEFINES]->(n:Function)
+                RETURN id(n) AS node_id,
+                    n.qualified_name AS qualified_name,
+                    n.start_line AS start_line,
+                    n.end_line AS end_line,
+                    m.path AS path
+                ORDER BY qualified_name
+                """
 
             results = self.ingestor._execute_query(query)
 
@@ -516,6 +532,9 @@ class GraphUpdater:
             return None
 
         file_path_obj = Path(file_path)
+        parts = file_path_obj.parts
+        file_path_obj = Path(*parts[1:])
+        file_path_obj = (self.repo_path / file_path_obj).resolve()
 
         # Create AST extractor function if AST is available
         ast_extractor = None

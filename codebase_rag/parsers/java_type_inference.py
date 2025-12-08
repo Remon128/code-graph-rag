@@ -198,37 +198,37 @@ class JavaTypeInferenceEngine:
         Returns:
             Dictionary mapping variable names to their fully qualified type names
         """
-        local_var_types: dict[str, str] = {}
+        return {}
+        # local_var_types: dict[str, str] = {}
 
-        try:
-            # 1. Analyze method/constructor parameters
-            self._analyze_java_parameters(scope_node, local_var_types, module_qn)
+        # try:
+        #     # 1. Analyze method/constructor parameters
+        #     self._analyze_java_parameters(scope_node, local_var_types, module_qn)
 
-            # 2. Analyze local variable declarations in the scope
-            self._analyze_java_local_variables(scope_node, local_var_types, module_qn)
+        #     # 2. Analyze local variable declarations in the scope
+        #     self._analyze_java_local_variables(scope_node, local_var_types, module_qn)
 
-            # 3. Analyze field declarations from the containing class
-            self._analyze_java_class_fields(scope_node, local_var_types, module_qn)
+        #     # 3. Analyze field declarations from the containing class
+        #     self._analyze_java_class_fields(scope_node, local_var_types, module_qn)
 
-            # 4. Analyze constructor assignments and field initializations
-            self._analyze_java_constructor_assignments(
-                scope_node, local_var_types, module_qn
-            )
+        #     # 4. Analyze constructor assignments and field initializations
+        #     self._analyze_java_constructor_assignments(
+        #         scope_node, local_var_types, module_qn
+        #     )
 
-            # 5. Analyze enhanced for loop variables using tree-sitter
-            self._analyze_java_enhanced_for_loops(
-                scope_node, local_var_types, module_qn
-            )
+        #     # 5. Analyze enhanced for loop variables using tree-sitter
+        #     self._analyze_java_enhanced_for_loops(
+        #         scope_node, local_var_types, module_qn
+        #     )
 
-            logger.debug(
-                f"Built Java variable type map with {len(local_var_types)} entries"
-            )
+        #     logger.debug(
+        #         f"Built Java variable type map with {len(local_var_types)} entries"
+        #     )
 
-        except Exception as e:
-            logger.error(f"Failed to build Java variable type map: {e}")
+        # except Exception as e:
+        #     logger.error(f"Failed to build Java variable type map: {e}")
 
-        return local_var_types
-
+        # return local_var_types
     def _analyze_java_parameters(
         self, scope_node: Node, local_var_types: dict[str, str], module_qn: str
     ) -> None:

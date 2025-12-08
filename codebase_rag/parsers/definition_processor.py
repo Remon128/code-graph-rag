@@ -91,7 +91,8 @@ class DefinitionProcessor:
         if isinstance(file_path, str):
             file_path = Path(file_path)
         relative_path = file_path.relative_to(self.repo_path)
-        relative_path_str = str(relative_path)
+        #relative_path_str = str(relative_path)
+        relative_path_str = str(Path(self.project_name) / relative_path)
         logger.info(f"Parsing and Caching AST for {language}: {relative_path_str}")
 
         try:

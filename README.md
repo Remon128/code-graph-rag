@@ -781,3 +781,17 @@ For issues or questions:
 ## Star History
 
 [![Star History Chart](https://api.star-history.com/svg?repos=vitali87/code-graph-rag&type=Date)](https://www.star-history.com/#vitali87/code-graph-rag&Date)
+
+-----------------------------------------------------------------------------------------------------------------------------------------------
+## To run generate_embeddings script 
+python -m codebase_rag.scripts.generate_embeddings \
+  --repo-root "repo_path" \
+  --memgraph-host localhost \
+  --memgraph-port 7687 \
+  --output ./embedded_report.jsonl
+
+  ## To start the api server 
+  uvicorn codebase_rag.api_server:app --host 0.0.0.0 --port 8000 &
+
+  ## To start the streamlit web page : 
+  streamlit run codebase_rag/web_ui.py --server.port 8501 --server.address 0.0.0.0
