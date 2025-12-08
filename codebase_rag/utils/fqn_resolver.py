@@ -37,6 +37,9 @@ def resolve_fqn_from_ast(
         func_name = fqn_config.get_name(func_node)
         if not func_name:
             return None
+        if func_node.type in fqn_config.function_node_types:
+            if not func_name.endswith("()"):
+                func_name = func_name + "()"
         parts.append(func_name)
 
         # 2. Walk up to collect enclosing scopes

@@ -472,6 +472,13 @@ class GraphUpdater:
                 RETURN id(n) AS node_id, n.qualified_name AS qualified_name,
                     n.start_line AS start_line, n.end_line AS end_line,
                     m.path AS path
+                UNION
+                MATCH (m:Module)-[:DEFINES]->(:Function)-[:DEFINES]->(n:Function)
+                RETURN id(n) AS node_id,
+                    n.qualified_name AS qualified_name,
+                    n.start_line AS start_line,
+                    n.end_line AS end_line,
+                    m.path AS path
                 ORDER BY qualified_name
                 """
 
@@ -525,8 +532,9 @@ class GraphUpdater:
             return None
 
         file_path_obj = Path(file_path)
-        #if not file_path_obj.is_absolute():
-         #   file_path_obj = (self.repo_path / file_path_obj).resolve()
+        parts = file_path_obj.parts
+        file_path_obj = Path(*parts[1:])
+        file_path_obj = (self.repo_path / file_path_obj).resolve()
 
         # Create AST extractor function if AST is available
         ast_extractor = None

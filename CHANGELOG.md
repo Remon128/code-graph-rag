@@ -30,3 +30,4 @@ codebase_rag/cmd_tool.py
 codebase_rag/parsers/definition_processor.py
 codebase_rag/parsers/java_type_inference.py
 codebase_rag/graph_updater.py
+utils/fqn_resolver.py
