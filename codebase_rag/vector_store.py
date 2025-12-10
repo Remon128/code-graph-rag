@@ -50,7 +50,7 @@ if has_qdrant_client():
             logger.warning(f"Failed to store embedding for {qualified_name}: {e}")
 
     def search_embeddings(
-        query_embedding: list[float], top_k: int = 5
+    query_embedding: list[float], top_k: int = 5
     ) -> list[tuple[int, float]]:
         """Search for similar code embeddings.
 
@@ -63,10 +63,11 @@ if has_qdrant_client():
         """
         try:
             client = get_qdrant_client()
-            hits = client.search(
-                collection_name=_COLLECTION, query_vector=query_embedding, limit=top_k
+            result = client.query_points(
+                collection_name=_COLLECTION, query=query_embedding, limit=top_k
             )
-            return [(hit.payload["node_id"], hit.score) for hit in hits]
+            # Access .points attribute to get the list of scored points
+            return [(hit.payload["node_id"], hit.score) for hit in result.points]
         except Exception as e:
             logger.warning(f"Failed to search embeddings: {e}")
             return []

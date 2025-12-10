@@ -21,10 +21,19 @@ dependencies = [
     "diff-match-patch>=20241021",
     "click>=8.0.0",
     "pytest-xdist>=3.8.0",
+    # NEW: Web interface dependencies
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.30.0",
+    "streamlit>=1.39.0",
+    "streamlit-chat>=0.1.1",
+    "requests>=2.32.0",
+    "groq>=0.36.0",
 ]
 
 [project.scripts]
 graph-code = "codebase_rag.main:app"
+graph-code-api = "codebase_rag.api_server:app"
+graph-code-web = "codebase_rag.web_ui:main"
 
 [tool.uv]
 package = true
