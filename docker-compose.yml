@@ -1,0 +1,115 @@
+# Docker Compose for Code Graph RAG
+# Complete stack: Memgraph + Backend API + Streamlit UI
+services:
+  # ===========================================
+  # Memgraph Database
+  # ===========================================
+  memgraph:
+    image: memgraph/memgraph-mage
+    container_name: code-graph-memgraph-new
+    ports:
+      - "${MEMGRAPH_PORT:-7687}:7687"
+      - "${MEMGRAPH_HTTP_PORT:-7444}:7444"
+    volumes:
+      - memgraph_data_new:/var/lib/memgraph
+    networks:
+      - code-graph-network
+    healthcheck:
+      test: ["CMD", "echo", ">", "/dev/tcp/localhost/7687"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+  # ===========================================
+  # Memgraph Lab (Optional - for visualization)
+  # ===========================================
+  lab:
+    image: memgraph/lab
+    container_name: code-graph-lab
+    ports:
+      - "${LAB_PORT:-3000}:3000"
+    environment:
+      QUICK_CONNECT_MG_HOST: memgraph
+      QUICK_CONNECT_MG_PORT: 7687
+    depends_on:
+      - memgraph
+    networks:
+      - code-graph-network
+  # ===========================================
+  # Backend: FastAPI + Indexing + Embeddings
+  # ===========================================
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    container_name: code-graph-backend
+    ports:
+      - "8000:8000"
+    environment:
+      # Memgraph connection
+      MEMGRAPH_HOST: memgraph
+      MEMGRAPH_PORT: 7687
+      MEMGRAPH_BATCH_SIZE: ${MEMGRAPH_BATCH_SIZE:-1000}
+      
+      # Repository path (inside container)
+      TARGET_REPO_PATH: /repo
+      
+      # Indexing options
+      RUN_INDEXING: ${RUN_INDEXING:-false}
+      CLEAN_DATABASE: ${CLEAN_DATABASE:-false}
+      
+      # LLM Provider Configuration - Orchestrator
+      ORCHESTRATOR_PROVIDER: ${ORCHESTRATOR_PROVIDER:-groq}
+      ORCHESTRATOR_MODEL: ${ORCHESTRATOR_MODEL:-openai/gpt-oss-120b}
+      ORCHESTRATOR_API_KEY: ${ORCHESTRATOR_API_KEY:-}
+      ORCHESTRATOR_ENDPOINT: ${ORCHESTRATOR_ENDPOINT:-}
+      
+      # LLM Provider Configuration - Cypher
+      CYPHER_PROVIDER: ${CYPHER_PROVIDER:-groq}
+      CYPHER_MODEL: ${CYPHER_MODEL:-openai/gpt-oss-120b}
+      CYPHER_API_KEY: ${CYPHER_API_KEY:-}
+      CYPHER_ENDPOINT: ${CYPHER_ENDPOINT:-}
+      
+      # Shell command timeout
+      SHELL_COMMAND_TIMEOUT: ${SHELL_COMMAND_TIMEOUT:-30}
+    volumes:
+      # Mount your repository here
+      - ${HOST_REPO_PATH:-./sample_repo}:/repo:ro
+      - qdrant_data:/app/.qdrant_code_embeddings
+    depends_on:
+      memgraph:
+        condition: service_started
+    networks:
+      - code-graph-network
+    restart: unless-stopped
+  # ===========================================
+  # Frontend: Streamlit Web UI
+  # ===========================================
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    container_name: code-graph-frontend
+    ports:
+      - "8501:8501"
+    environment:
+      API_URL: http://backend:8000
+    depends_on:
+      - backend
+    networks:
+      - code-graph-network
+    restart: unless-stopped
+# ===========================================
+# Networks
+# ===========================================
+networks:
+  code-graph-network:
+    driver: bridge
+# ===========================================
+# Volumes
+# ===========================================
+volumes:
+  memgraph_data_new:
+    driver: local
+  qdrant_data:
+    driver: local
