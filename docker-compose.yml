@@ -12,14 +12,17 @@ services:
       - "${MEMGRAPH_HTTP_PORT:-7444}:7444"
     volumes:
       - memgraph_data_new:/var/lib/memgraph
+    environment:
+      - MEMGRAPH_LOG_LEVEL=WARNING
     networks:
       - code-graph-network
     healthcheck:
-      test: ["CMD", "echo", ">", "/dev/tcp/localhost/7687"]
-      interval: 10s
+      test: ["CMD-SHELL", "echo 'RETURN 1;' | mgconsole --host 127.0.0.1 --port 7687 || exit 1"]
+      interval: 5s
       timeout: 5s
       retries: 10
-      start_period: 10s
+      start_period: 15s
+
   # ===========================================
   # Memgraph Lab (Optional - for visualization)
   # ===========================================
@@ -32,9 +35,11 @@ services:
       QUICK_CONNECT_MG_HOST: memgraph
       QUICK_CONNECT_MG_PORT: 7687
     depends_on:
-      - memgraph
+      memgraph:
+        condition: service_healthy
     networks:
       - code-graph-network
+
   # ===========================================
   # Backend: FastAPI + Indexing + Embeddings
   # ===========================================
@@ -78,10 +83,11 @@ services:
       - qdrant_data:/app/.qdrant_code_embeddings
     depends_on:
       memgraph:
-        condition: service_started
+        condition: service_healthy
     networks:
       - code-graph-network
     restart: unless-stopped
+
   # ===========================================
   # Frontend: Streamlit Web UI
   # ===========================================
@@ -95,16 +101,19 @@ services:
     environment:
       API_URL: http://backend:8000
     depends_on:
-      - backend
+      backend:
+        condition: service_started
     networks:
       - code-graph-network
     restart: unless-stopped
+
 # ===========================================
 # Networks
 # ===========================================
 networks:
   code-graph-network:
     driver: bridge
+
 # ===========================================
 # Volumes
 # ===========================================

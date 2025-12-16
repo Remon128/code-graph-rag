@@ -1,7 +1,7 @@
 # Backend Dockerfile for code-graph-rag
 FROM python:3.12-slim-bookworm
 
-# Install system dependencies (ONE block only)
+# Install system dependencies including netcat for network checks
 RUN apt-get update && apt-get install -y --no-install-recommends \
     cmake \
     build-essential \
@@ -9,6 +9,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     libssl-dev \
     pkg-config \
+    netcat-openbsd \
     && rm -rf /var/lib/apt/lists/*
 
 # Environment variables
@@ -33,52 +34,121 @@ RUN uv sync --extra treesitter-full --extra semantic --no-dev \
     || uv sync --extra semantic --no-dev \
     || uv sync --no-dev
 
+# Make sure runtime uses the uv venv
+ENV PATH="/app/.venv/bin:$PATH"
+
 # Ensure mount path exists
 RUN mkdir -p /repo
 
-# Entrypoint script
-RUN echo '#!/bin/bash\n\
-set -e\n\
-\n\
-echo "=== Code Graph RAG Backend ==="\n\
-echo "Waiting for Memgraph to be ready..."\n\
-\n\
-MAX_RETRIES=30\n\
-RETRY_COUNT=0\n\
-while ! python - <<EOF 2>/dev/null\n\
-from codebase_rag.services.graph_service import MemgraphIngestor\n\
-MemgraphIngestor(host="${MEMGRAPH_HOST:-memgraph}", port=int("${MEMGRAPH_PORT:-7687}"))\n\
-EOF\n\
-do\n\
-    RETRY_COUNT=$((RETRY_COUNT + 1))\n\
-    if [ $RETRY_COUNT -ge $MAX_RETRIES ]; then\n\
-        echo "ERROR: Could not connect to Memgraph after $MAX_RETRIES attempts"\n\
-        exit 1\n\
-    fi\n\
-    echo "Waiting for Memgraph... (attempt $RETRY_COUNT/$MAX_RETRIES)"\n\
-    sleep 2\n\
-done\n\
-echo "Memgraph is ready!"\n\
-\n\
-if [ "$RUN_INDEXING" = "true" ] && [ -n "$TARGET_REPO_PATH" ]; then\n\
-    echo "Running graph indexing for: $TARGET_REPO_PATH"\n\
-    if [ "$CLEAN_DATABASE" = "true" ]; then\n\
-        python -m codebase_rag.main start --repo-path "$TARGET_REPO_PATH" --update-graph --clean\n\
-    else\n\
-        python -m codebase_rag.main start --repo-path "$TARGET_REPO_PATH" --update-graph\n\
-    fi\n\
-    echo "Indexing complete!"\n\
-fi\n\
-\n\
-echo "Starting FastAPI server on port 8000..."\n\
-exec uvicorn codebase_rag.api_server:app --host 0.0.0.0 --port 8000\n\
-' > /app/entrypoint.sh && chmod +x /app/entrypoint.sh
+# Entrypoint script with proper Memgraph connection check
+RUN cat > /app/entrypoint.sh <<'EOF'
+#!/bin/bash
+set -e
+
+echo "=== Code Graph RAG Backend ==="
+echo "Waiting for Memgraph to be ready..."
+
+MAX_RETRIES=30
+RETRY_COUNT=0
+
+# Wait for Memgraph port to be open
+while ! nc -z ${MEMGRAPH_HOST:-memgraph} ${MEMGRAPH_PORT:-7687} 2>/dev/null; do
+    RETRY_COUNT=$((RETRY_COUNT + 1))
+    if [ $RETRY_COUNT -ge $MAX_RETRIES ]; then
+        echo "ERROR: Could not connect to Memgraph after $MAX_RETRIES attempts"
+        exit 1
+    fi
+    echo "Waiting for Memgraph... (attempt $RETRY_COUNT/$MAX_RETRIES)"
+    sleep 2
+done
+
+echo "✓ Memgraph port is open"
+
+# Give Memgraph a moment to fully initialize
+sleep 3
+
+# Test actual Memgraph connection
+echo "Testing Memgraph connection..."
+python -c "
+from codebase_rag.services.graph_service import MemgraphIngestor
+
+try:
+    MemgraphIngestor(
+        host='${MEMGRAPH_HOST:-memgraph}',
+        port=int('${MEMGRAPH_PORT:-7687}')
+    )
+    print('✓ Successfully connected to Memgraph')
+except Exception as e:
+    print(f'ERROR: Failed to connect to Memgraph: {e}')
+    raise
+"
+
+if [ $? -ne 0 ]; then
+    echo "ERROR: Memgraph connection test failed"
+    exit 1
+fi
+
+# Run indexing if requested
+if [ "$RUN_INDEXING" = "true" ]; then
+    if [ -z "$TARGET_REPO_PATH" ]; then
+        echo "ERROR: TARGET_REPO_PATH not set but RUN_INDEXING=true"
+        exit 1
+    fi
+    
+    if [ ! -d "$TARGET_REPO_PATH" ]; then
+        echo "ERROR: Repository path does not exist: $TARGET_REPO_PATH"
+        exit 1
+    fi
+    
+    echo ""
+    echo "=========================================="
+    echo "Running graph indexing..."
+    echo "Repository: $TARGET_REPO_PATH"
+    echo "Clean database: $CLEAN_DATABASE"
+    echo "=========================================="
+    echo ""
+    
+    if [ "$CLEAN_DATABASE" = "true" ]; then
+        python -m codebase_rag.main start \
+            --repo-path "$TARGET_REPO_PATH" \
+            --update-graph \
+            --clean \
+            --batch-size "${MEMGRAPH_BATCH_SIZE:-1000}" \
+            --orchestrator "${ORCHESTRATOR_PROVIDER}:${ORCHESTRATOR_MODEL}" \
+            --cypher "${CYPHER_PROVIDER}:${CYPHER_MODEL}" \
+            --no-confirm
+    else
+        python -m codebase_rag.main start \
+            --repo-path "$TARGET_REPO_PATH" \
+            --update-graph \
+            --batch-size "${MEMGRAPH_BATCH_SIZE:-1000}" \
+            --orchestrator "${ORCHESTRATOR_PROVIDER}:${ORCHESTRATOR_MODEL}" \
+            --cypher "${CYPHER_PROVIDER}:${CYPHER_MODEL}" \
+            --no-confirm
+    fi
+    
+    if [ $? -eq 0 ]; then
+        echo ""
+        echo "✓ Indexing completed successfully!"
+        echo ""
+    else
+        echo ""
+        echo "ERROR: Indexing failed!"
+        exit 1
+    fi
+fi
+
+echo "Starting FastAPI server on port 8000..."
+exec uvicorn codebase_rag.api_server:app --host 0.0.0.0 --port 8000 --timeout-keep-alive 120
+EOF
+
+RUN chmod +x /app/entrypoint.sh
 
 # Expose backend API port
 EXPOSE 8000
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+# Health check - only after server is running
+HEALTHCHECK --interval=30s --timeout=10s --start-period=120s --retries=3 \
     CMD curl -f http://localhost:8000/health || exit 1
 
 ENTRYPOINT ["/app/entrypoint.sh"]
