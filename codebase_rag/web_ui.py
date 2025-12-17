@@ -8,6 +8,7 @@ import requests
 import streamlit as st
 from streamlit_chat import message as st_message
 from PIL import Image
+from pathlib import Path
 
 # Configuration - Use environment variable for Docker compatibility
 API_URL = os.getenv("API_URL", "http://localhost:8000")
@@ -121,10 +122,13 @@ def main():
 
     # Header with Ejada Logo
     try:
-        logo = Image.open("assets/ejada_logo.png")
-        st.image(logo, width=300)
+        logo_path = Path(__file__).parent / "assets" / "ejada_logo.png"
+        if logo_path.exists():
+            st.image(str(logo_path), width=300)
+        else:
+            raise FileNotFoundError(logo_path)
     except Exception as e:
-        st.error(f"Could not load logo: {e}")
+        st.warning(f"Could not load logo: {e}")
         st.markdown('<div class="main-header">🤖 Ejada</div>', unsafe_allow_html=True)
 
     st.markdown("### chat with code")

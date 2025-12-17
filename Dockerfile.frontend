@@ -24,7 +24,8 @@ RUN pip install --no-cache-dir \
 # Copy only the web UI file
 COPY codebase_rag/web_ui.py ./web_ui.py
 
-# Note: Logo removed for simplicity
+# copy assets 
+COPY codebase_rag/assets ./assets
 
 # Create a simple health check script
 RUN echo '#!/bin/bash\ncurl -f http://localhost:8501/_stcore/health || exit 1' > /healthcheck.sh \
