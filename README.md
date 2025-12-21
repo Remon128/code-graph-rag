@@ -184,7 +184,21 @@ CYPHER_MODEL=gemini-2.5-flash
 CYPHER_API_KEY=your-google-api-key
 ```
 
-#### Option 4: Mixed Providers
+#### Option 4: All groq Models
+# .env file
+ORCHESTRATOR_PROVIDER=groq
+ORCHESTRATOR_MODEL=openai/gpt-oss-120b
+ORCHESTRATOR_API_KEY=gsk-your-groq-key
+
+CYPHER_PROVIDER=groq
+CYPHER_MODEL=openai/gpt-oss-120b
+CYPHER_API_KEY=gsk-your-groq-key
+
+Get your Groq API key from
+https://console.groq.com/keys
+
+
+#### Option 5: Mixed Providers
 ```bash
 # .env file - Google orchestrator + Ollama cypher
 ORCHESTRATOR_PROVIDER=google
@@ -783,15 +797,27 @@ For issues or questions:
 [![Star History Chart](https://api.star-history.com/svg?repos=vitali87/code-graph-rag&type=Date)](https://www.star-history.com/#vitali87/code-graph-rag&Date)
 
 -----------------------------------------------------------------------------------------------------------------------------------------------
-## To run generate_embeddings script 
-python -m codebase_rag.scripts.generate_embeddings \
-  --repo-root "repo_path" \
-  --memgraph-host localhost \
-  --memgraph-port 7687 \
-  --output ./embedded_report.jsonl
-
   ## To start the api server 
   uvicorn codebase_rag.api_server:app --host 0.0.0.0 --port 8000 &
 
   ## To start the streamlit web page : 
   streamlit run codebase_rag/web_ui.py --server.port 8501 --server.address 0.0.0.0
+
+## Code mind can be run as a fully dockerized stack including:
+
+Memgraph (graph database)
+
+Backend API (FastAPI + indexing + embeddings)
+
+Frontend UI (Streamlit)
+
+Start the stack
+docker compose up --build
+
+## Persistent Data (Important)
+
+Docker uses named volumes to persist data:
+
+memgraph_data_new → graph database
+
+qdrant_data → vector embeddings

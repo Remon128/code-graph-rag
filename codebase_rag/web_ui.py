@@ -15,7 +15,7 @@ API_URL = os.getenv("API_URL", "http://localhost:8000")
 
 # Page configuration
 st.set_page_config(
-    page_title="Code Chat",
+    page_title="Code Mind",
     page_icon="🤖",
     layout="wide",
     initial_sidebar_state="expanded",
