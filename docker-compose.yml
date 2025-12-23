@@ -20,7 +20,7 @@ services:
     image: memgraph/lab
     container_name: code-graph-lab
     ports:
-      - "3000:3000"
+      - "3001:3000"
     environment:
       QUICK_CONNECT_MG_HOST: memgraph
       QUICK_CONNECT_MG_PORT: 7687
@@ -35,7 +35,7 @@ services:
       dockerfile: Dockerfile.backend
     container_name: code-graph-backend
     ports:
-      - "8000:8000"
+      - "8001:8000"
     environment:
       MEMGRAPH_HOST: memgraph
       MEMGRAPH_PORT: 7687
@@ -51,7 +51,7 @@ services:
       CYPHER_API_KEY: ${CYPHER_API_KEY:-}
       SHELL_COMMAND_TIMEOUT: ${SHELL_COMMAND_TIMEOUT:-30}
     volumes:
-      - ${HOST_REPO_PATH:-./sample_repo}:/repo:ro
+      - ${HOST_REPO_PATH}:/repo
       - qdrant_data:/app/.qdrant_code_embeddings
     depends_on:
       memgraph:

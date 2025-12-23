@@ -1,16 +1,16 @@
 """
-Streamlit web interface for code-graph-rag.
-Place this file in: codebase_rag/web_ui.py
+Streamlit web interface for code-graph-rag with improved error handling.
 """
 
 import os
+import time
 import requests
 import streamlit as st
 from streamlit_chat import message as st_message
 from PIL import Image
 from pathlib import Path
 
-# Configuration - Use environment variable for Docker compatibility
+# Configuration
 API_URL = os.getenv("API_URL", "http://localhost:8000")
 
 # Page configuration
@@ -21,7 +21,7 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-# Custom CSS
+# -------------------- Styles --------------------
 st.markdown(
     """
 <style>
@@ -46,12 +46,15 @@ st.markdown(
     border: 1px solid #f5c6cb;
     color: #721c24;
 }
-.chat-container {
-    height: 600px;
-    overflow-y: auto;
+.status-warning {
+    background-color: #fff3cd;
+    border: 1px solid #ffeeba;
+    color: #856404;
+}
+.upload-box {
     padding: 1rem;
-    border: 1px solid #ddd;
     border-radius: 0.5rem;
+    border: 2px dashed #1f77b4;
     margin-bottom: 1rem;
 }
 </style>
@@ -59,210 +62,282 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-
+# -------------------- Helpers --------------------
 def check_api_health():
-    """Check if the API is running and healthy."""
     try:
-        response = requests.get(f"{API_URL}/health", timeout=5)
-        if response.status_code == 200:
-            return True, response.json()
+        r = requests.get(f"{API_URL}/health", timeout=5)
+        return r.status_code == 200, r.json() if r.ok else None
+    except Exception:
         return False, None
-    except requests.exceptions.RequestException:
-        return False, None
+
+
+def check_upload_status():
+    """Check if an upload is in progress."""
+    try:
+        r = requests.get(f"{API_URL}/upload-status", timeout=5)
+        if r.ok:
+            return r.json()
+        return {"upload_in_progress": False, "status": "unknown"}
+    except Exception:
+        return {"upload_in_progress": False, "status": "error"}
 
 
 def send_message(message: str, session_id: str | None = None):
-    """Send a message to the API and get a response."""
+    payload = {"message": message}
+    if session_id:
+        payload["session_id"] = session_id
+
     try:
-        payload = {"message": message}
-        if session_id:
-            payload["session_id"] = session_id
-
-        response = requests.post(
-            f"{API_URL}/chat",
-            json=payload,
-            timeout=300,  # 5 minutes timeout for long operations
-        )
-
-        if response.status_code == 200:
-            return response.json()
+        r = requests.post(f"{API_URL}/chat", json=payload, timeout=300)
+        if r.ok:
+            return r.json()
         else:
+            error_detail = "Unknown error"
+            try:
+                error_data = r.json()
+                error_detail = error_data.get("detail", r.text)
+            except:
+                error_detail = r.text
+            
             return {
-                "response": f"Error: {response.status_code} - {response.text}",
-                "session_id": session_id,
+                "response": f"❌ Error: {error_detail}",
                 "status": "error",
+                "session_id": session_id
             }
     except requests.exceptions.Timeout:
         return {
-            "response": "Request timed out. The operation might still be running on the server.",
-            "session_id": session_id,
+            "response": "❌ Request timed out. The system might be processing a large query.",
             "status": "error",
+            "session_id": session_id
         }
-    except requests.exceptions.RequestException as e:
-        return {
-            "response": f"Connection error: {str(e)}",
-            "session_id": session_id,
-            "status": "error",
-        }
-
-
-def init_session_state():
-    """Initialize session state variables."""
-    if "messages" not in st.session_state:
-        st.session_state.messages = []
-    if "session_id" not in st.session_state:
-        st.session_state.session_id = None
-    if "api_healthy" not in st.session_state:
-        st.session_state.api_healthy = False
-
-
-def main():
-    """Main Streamlit application."""
-    init_session_state()
-
-    # Header with Ejada Logo
-    try:
-        logo_path = Path(__file__).parent / "assets" / "ejada_logo.png"
-        if logo_path.exists():
-            st.image(str(logo_path), width=300)
-        else:
-            raise FileNotFoundError(logo_path)
     except Exception as e:
-        st.warning(f"Could not load logo: {e}")
+        return {
+            "response": f"❌ Connection error: {str(e)}",
+            "status": "error",
+            "session_id": session_id
+        }
+
+
+def upload_repo(zip_file):
+    """Upload repository with proper error handling."""
+    try:
+        files = {"file": (zip_file.name, zip_file.getvalue(), "application/zip")}
+        
+        # Use longer timeout for large files
+        timeout = 600  # 10 minutes
+        
+        r = requests.post(
+            f"{API_URL}/upload-repo",
+            files=files,
+            timeout=timeout
+        )
+        
+        if r.ok:
+            return r.json()
+        else:
+            error_detail = "Unknown error"
+            try:
+                error_data = r.json()
+                error_detail = error_data.get("detail", r.text)
+            except:
+                error_detail = r.text
+            
+            raise RuntimeError(error_detail)
+            
+    except requests.exceptions.Timeout:
+        raise RuntimeError("Upload timed out. File might be too large.")
+    except requests.exceptions.ConnectionError:
+        raise RuntimeError("Connection error. Is the backend running?")
+    except Exception as e:
+        raise RuntimeError(str(e))
+
+
+def init_state():
+    st.session_state.setdefault("messages", [])
+    st.session_state.setdefault("session_id", None)
+    st.session_state.setdefault("api_healthy", False)
+    st.session_state.setdefault("indexing", False)
+    st.session_state.setdefault("upload_result", None)
+
+
+# -------------------- UI --------------------
+def main():
+    init_state()
+
+    # Header
+    try:
+        logo = Path(__file__).parent / "assets" / "ejada_logo.png"
+        if logo.exists():
+            st.image(str(logo), width=300)
+        else:
+            raise FileNotFoundError
+    except Exception:
         st.markdown('<div class="main-header">🤖 Ejada</div>', unsafe_allow_html=True)
 
-    st.markdown("### chat with code")
+    st.markdown("### Chat with your codebase")
 
-    # Sidebar
+    # Check upload status
+    upload_status_data = check_upload_status()
+    is_indexing = upload_status_data.get("upload_in_progress", False)
+
+    # ---------------- Sidebar ----------------
     with st.sidebar:
-        st.header("⚙️ Settings")
+        st.header("📂 Project Upload")
 
-        # Display API URL
-        st.info(f"**API URL:** {API_URL}")
-
-        # API Health Check
-        is_healthy, health_data = check_api_health()
-        st.session_state.api_healthy = is_healthy
-
-        if is_healthy:
+        # Show indexing status if in progress
+        if is_indexing:
             st.markdown(
-                '<div class="status-box status-healthy">✅ API Status: Healthy</div>',
+                '<div class="status-box status-warning">⏳ <b>Indexing in Progress</b><br/>Please wait...</div>',
                 unsafe_allow_html=True,
             )
-            if health_data:
-                st.json(
-                    {
-                        "Memgraph": (
-                            "Connected"
-                            if health_data.get("memgraph_connected")
-                            else "Disconnected"
-                        ),
-                        "Agent": (
-                            "Initialized"
-                            if health_data.get("agent_initialized")
-                            else "Not Initialized"
-                        ),
-                    }
-                )
+        
+        st.markdown(
+            '<div class="upload-box">Upload a <b>.zip</b> repository to reindex<br/>'
+            '<small>Limit: 500MB | Supports Java, Python, JS, TS, C++, Go, Rust</small></div>',
+            unsafe_allow_html=True,
+        )
+
+        uploaded = st.file_uploader(
+            "Upload repository (ZIP only)",
+            type=["zip"],
+            accept_multiple_files=False,
+            disabled=is_indexing,
+        )
+
+        upload_button_disabled = is_indexing or uploaded is None
+        
+        if st.button(
+            "🚀 Upload & Reindex",
+            use_container_width=True,
+            disabled=upload_button_disabled
+        ):
+            if uploaded:
+                # Check file size before uploading
+                file_size_mb = len(uploaded.getvalue()) / (1024 * 1024)
+                
+                if file_size_mb > 500:
+                    st.error(f"File too large ({file_size_mb:.1f}MB). Maximum size is 500MB.")
+                else:
+                    st.session_state.messages = []
+                    st.session_state.session_id = None
+                    st.session_state.upload_result = None
+
+                    with st.spinner(f"Uploading repository ({file_size_mb:.1f}MB)..."):
+                        try:
+                            result = upload_repo(uploaded)
+                            st.session_state.upload_result = {
+                                "success": True,
+                                "data": result
+                            }
+                        except Exception as e:
+                            st.session_state.upload_result = {
+                                "success": False,
+                                "error": str(e)
+                            }
+                        finally:
+                            st.rerun()
+
+        # Display upload result if available
+        if st.session_state.upload_result:
+            result = st.session_state.upload_result
+            if result["success"]:
+                data = result["data"]
+                st.success(data.get("message", "Upload successful!"))
+                
+                if data.get("file_count"):
+                    st.info(f"📊 **Files to process:** {data['file_count']:,}")
+                
+                if data.get("estimated_time"):
+                    st.info(f"⏱️ **Estimated time:** {data['estimated_time']}")
+                
+                if st.button("✅ Dismiss", use_container_width=True):
+                    st.session_state.upload_result = None
+                    st.rerun()
+            else:
+                st.error(f"Upload failed: {result['error']}")
+                if st.button("❌ Dismiss", use_container_width=True):
+                    st.session_state.upload_result = None
+                    st.rerun()
+
+        st.divider()
+
+        st.header("⚙️ System Status")
+        healthy, data = check_api_health()
+        st.session_state.api_healthy = healthy
+
+        if healthy:
+            st.markdown(
+                '<div class="status-box status-healthy">✅ API Healthy</div>',
+                unsafe_allow_html=True,
+            )
+            
+            if data:
+                # Show upload status
+                if data.get("upload_in_progress"):
+                    st.warning("⏳ Indexing in progress...")
+                
+                status_info = {
+                    "Memgraph": "✅" if data.get("memgraph_connected") else "❌",
+                    "Agent": "✅" if data.get("agent_initialized") else "❌",
+                    "Status": "Indexing" if data.get("upload_in_progress") else "Ready"
+                }
+                st.json(status_info)
         else:
             st.markdown(
-                '<div class="status-box status-error">❌ API Status: Unavailable</div>',
+                '<div class="status-box status-error">❌ API Down</div>',
                 unsafe_allow_html=True,
-            )
-            st.error(
-                "API server is not responding. Please check if all Docker containers are running:\n```bash\ndocker-compose ps\n```"
             )
 
         st.divider()
 
-        # Session Info
-        st.subheader("📊 Session Info")
-        if st.session_state.session_id:
-            st.info(f"**Session ID:** {st.session_state.session_id[:8]}...")
-            st.metric("Messages", len(st.session_state.messages))
-        else:
-            st.info("No active session")
-
-        # Clear Chat Button
         if st.button("🗑️ Clear Chat", use_container_width=True):
             st.session_state.messages = []
             st.session_state.session_id = None
             st.rerun()
 
-        st.divider()
-
-        # About
-        st.subheader("ℹ️ About")
-        st.markdown(
-            """
-        This interface allows you to:
-        - Query your codebase
-        - Search through code semantically
-        - Read and modify files
-        - Execute shell commands
-        - Analyze documents
+    # ---------------- Main Area ----------------
+    if is_indexing:
+        st.warning("⏳ Indexing in progress. Chat is temporarily disabled. This may take several minutes for large repositories.")
         
-        The agent has access to all code-graph-rag tools.
-        """
-        )
+        # Show progress indicator
+        with st.spinner("Processing repository..."):
+            time.sleep(2)  # Prevent too frequent refreshes
+            st.rerun()
+        return
 
-    # Main Chat Area
     if not st.session_state.api_healthy:
-        st.warning(
-            "⚠️ API is not available. Please ensure all Docker services are running."
-        )
+        st.warning("⚠️ API not available. Please check the system status in the sidebar.")
         return
 
     # Display chat messages
-    chat_container = st.container()
-    with chat_container:
-        for idx, msg in enumerate(st.session_state.messages):
-            if msg["role"] == "user":
-                st_message(msg["content"], is_user=True, key=f"user_{idx}")
-            else:
-                st_message(msg["content"], is_user=False, key=f"assistant_{idx}")
+    for i, msg in enumerate(st.session_state.messages):
+        st_message(msg["content"], is_user=msg["role"] == "user", key=str(i))
 
-    # Chat Input
     st.divider()
 
-    # Use a form to handle Enter key submission
-    with st.form(key="chat_form", clear_on_submit=True):
-        col1, col2 = st.columns([6, 1])
+    # Chat input form
+    with st.form("chat_form", clear_on_submit=True):
+        user_input = st.text_area(
+            "Your message",
+            placeholder="Ask something about your codebase…",
+            height=100,
+            label_visibility="collapsed",
+        )
+        submitted = st.form_submit_button("Send 📤")
 
-        with col1:
-            user_input = st.text_area(
-                "Your message:",
-                placeholder="Ask a question about your codebase",
-                height=100,
-                label_visibility="collapsed",
-            )
-
-        with col2:
-            submit_button = st.form_submit_button("Send 📤", use_container_width=True)
-
-    # Process message
-    if submit_button and user_input:
-        # Add user message to chat
+    if submitted and user_input:
         st.session_state.messages.append({"role": "user", "content": user_input})
 
-        # Show thinking indicator
-        with st.spinner("🤔 Agent is thinking..."):
-            # Send to API
+        with st.spinner("🤔 Thinking..."):
             result = send_message(user_input, st.session_state.session_id)
 
-            # Update session ID
-            if result.get("session_id"):
-                st.session_state.session_id = result["session_id"]
+        if result.get("session_id"):
+            st.session_state.session_id = result["session_id"]
 
-            # Add assistant response to chat
-            st.session_state.messages.append(
-                {
-                    "role": "assistant",
-                    "content": result.get("response", "Error: No response received"),
-                }
-            )
-
-        # Rerun to update chat display
+        response_content = result.get("response", "No response received")
+        st.session_state.messages.append(
+            {"role": "assistant", "content": response_content}
+        )
         st.rerun()
 
 
