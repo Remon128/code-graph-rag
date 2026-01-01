@@ -1,42 +1,49 @@
-# Frontend Dockerfile for code-graph-rag
-# Streamlit Web UI - lightweight container
+# Frontend Dockerfile with maximum timeout configurations
+FROM python:3.11-slim
 
-FROM python:3.12-slim
-
-# Set environment variables
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 
-# Install minimal dependencies
+# Increase pip timeout for slow networks
+ENV PIP_DEFAULT_TIMEOUT=300
+
+# Install system dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Set working directory
 WORKDIR /app
 
-# Install Python dependencies for Streamlit
-RUN pip install --no-cache-dir \
-    streamlit \
-    streamlit-chat \
-    requests \
-    pillow
-# Copy only the web UI file
-COPY codebase_rag/web_ui.py ./web_ui.py
+# Install Python dependencies with extended timeout
+RUN pip install --no-cache-dir --timeout 300 \
+    streamlit==1.28.0 \
+    streamlit-chat==0.1.1 \
+    requests==2.31.0 \
+    pillow==10.1.0 \
+    urllib3==2.0.7
 
-# copy assets 
+# Copy Streamlit configuration FIRST
+COPY .streamlit /app/.streamlit
+
+# Copy application files
+COPY codebase_rag/web_ui.py ./web_ui.py
 COPY codebase_rag/assets ./assets
 
-# Create a simple health check script
-RUN echo '#!/bin/bash\ncurl -f http://localhost:8501/_stcore/health || exit 1' > /healthcheck.sh \
-    && chmod +x /healthcheck.sh
-
-# Expose Streamlit port
 EXPOSE 8501
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
-    CMD /healthcheck.sh
+# Extended health check timeout
+HEALTHCHECK --interval=30s --timeout=20s --start-period=60s --retries=5 \
+    CMD curl -f http://localhost:8501/_stcore/health || exit 1
 
-# Run Streamlit
-CMD ["streamlit", "run", "web_ui.py", "--server.port=8501", "--server.address=0.0.0.0", "--server.headless=true"]
+# Run with maximum timeout configurations
+CMD ["streamlit", "run", "web_ui.py", \
+     "--server.port=8501", \
+     "--server.address=0.0.0.0", \
+     "--server.headless=true", \
+     "--server.maxUploadSize=2000", \
+     "--server.maxMessageSize=2000", \
+     "--server.enableCORS=false", \
+     "--server.enableXsrfProtection=false", \
+     "--server.enableWebsocketCompression=false", \
+     "--browser.serverAddress=0.0.0.0", \
+     "--browser.gatherUsageStats=false"]

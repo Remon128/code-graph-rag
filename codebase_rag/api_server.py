@@ -1,16 +1,16 @@
 """
-FastAPI backend for code-graph-rag web interface with proper size handling.
+FastAPI backend for code-graph-rag with proper indexing status tracking.
 """
-
+from fastapi import FastAPI, HTTPException, UploadFile, File, Request, BackgroundTasks
 import asyncio
 import shutil
 import subprocess
 import uuid
+import threading
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, HTTPException, UploadFile, File, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from loguru import logger
@@ -37,11 +37,8 @@ from .tools.shell_command import ShellCommander, create_shell_command_tool
 # Configuration
 # ============================
 
-# Maximum upload size in bytes (500MB)
 MAX_UPLOAD_SIZE = 500 * 1024 * 1024  # 500MB
-
-# Maximum number of files to process
-MAX_FILES_TO_PROCESS = 50000  # Safety limit
+MAX_FILES_TO_PROCESS = 50000
 
 
 # ============================
@@ -79,9 +76,39 @@ class UploadStatus(BaseModel):
 sessions: dict[str, dict[str, Any]] = {}
 rag_agent: Any = None
 ingestor: MemgraphIngestor | None = None
+upload_lock = threading.Lock()
 upload_in_progress = False
+indexing_process = None
 
 REPO_PATH = Path(settings.TARGET_REPO_PATH).resolve()
+
+
+# ============================
+# Background Indexing Monitor
+# ============================
+
+async def monitor_indexing_process():
+    """Monitor the indexing subprocess and update status."""
+    global upload_in_progress, indexing_process
+    
+    if indexing_process is None:
+        return
+    
+    try:
+        # Wait for process to complete
+        await asyncio.to_thread(indexing_process.wait)
+        
+        # Check return code
+        if indexing_process.returncode == 0:
+            logger.success("Indexing process completed successfully")
+        else:
+            logger.error(f"Indexing process failed with code {indexing_process.returncode}")
+    except Exception as e:
+        logger.error(f"Error monitoring indexing process: {e}")
+    finally:
+        upload_in_progress = False
+        indexing_process = None
+        logger.info("Indexing status reset - chat now available")
 
 
 # ============================
@@ -167,22 +194,25 @@ async def global_exception_handler(request: Request, exc: Exception):
 
 
 # ============================
-# Middleware for Size Limits
+# Middleware
 # ============================
 
 @app.middleware("http")
 async def limit_upload_size(request: Request, call_next):
     """Middleware to enforce upload size limits."""
     if request.url.path == "/upload-repo" and request.method == "POST":
+        logger.info(f"Upload request received. Current upload_in_progress: {upload_in_progress}")
         content_length = request.headers.get("content-length")
-        if content_length and int(content_length) > MAX_UPLOAD_SIZE:
-            return JSONResponse(
-                status_code=413,
-                content={
-                    "detail": f"File too large. Maximum size is {MAX_UPLOAD_SIZE / (1024*1024):.0f}MB",
-                    "status": "error"
-                }
-            )
+        if content_length:
+            logger.info(f"Upload size: {int(content_length) / (1024*1024):.1f}MB")
+            if int(content_length) > MAX_UPLOAD_SIZE:
+                return JSONResponse(
+                    status_code=413,
+                    content={
+                        "detail": f"File too large. Maximum size is {MAX_UPLOAD_SIZE / (1024*1024):.0f}MB",
+                        "status": "error"
+                    }
+                )
     
     response = await call_next(request)
     return response
@@ -215,7 +245,7 @@ async def chat(request: ChatRequest):
     if upload_in_progress:
         raise HTTPException(
             status_code=503, 
-            detail="System is currently processing a repository upload. Please wait."
+            detail="System is currently processing a repository upload. Please wait until indexing completes."
         )
 
     session_id = request.session_id or str(uuid.uuid4())
@@ -258,7 +288,6 @@ def count_files_in_directory(directory: Path, extensions: set[str] | None = None
 
 def estimate_processing_time(file_count: int) -> str:
     """Estimate processing time based on file count."""
-    # Rough estimate: 10 files per second
     seconds = file_count / 10
     
     if seconds < 60:
@@ -271,33 +300,82 @@ def estimate_processing_time(file_count: int) -> str:
         return f"{hours}h {minutes}m"
 
 
+def process_uploaded_repo(temp_zip: Path):
+    """
+    Runs heavy repository processing OUTSIDE the request lifecycle.
+    This prevents Streamlit timeouts for large repositories.
+    """
+    global upload_in_progress, indexing_process
+
+    try:
+        logger.info("Unpacking uploaded repository...")
+        shutil.unpack_archive(temp_zip, REPO_PATH)
+        temp_zip.unlink(missing_ok=True)
+
+        logger.info("Counting code files...")
+        code_extensions = {'.java', '.py', '.js', '.ts', '.cpp', '.c', '.h', '.go', '.rs'}
+        file_count = count_files_in_directory(REPO_PATH, code_extensions)
+
+        estimated_time = estimate_processing_time(file_count)
+        logger.info(f"Found {file_count} files, estimated time {estimated_time}")
+
+        logger.info("Starting indexing subprocess...")
+        indexing_process = subprocess.Popen(
+            [
+                "python", "-m", "codebase_rag.main", "start",
+                "--repo-path", str(REPO_PATH),
+                "--update-graph",
+                "--clean",
+                "--batch-size", str(settings.MEMGRAPH_BATCH_SIZE),
+                "--orchestrator",
+                f"{settings.ORCHESTRATOR_PROVIDER}:{settings.ORCHESTRATOR_MODEL}",
+                "--cypher",
+                f"{settings.CYPHER_PROVIDER}:{settings.CYPHER_MODEL}",
+                "--no-confirm",
+            ],
+            stdout=None,
+            stderr=None,
+        )
+
+        asyncio.run(monitor_indexing_process())
+
+    except Exception as e:
+        logger.error(f"Background indexing failed: {e}", exc_info=True)
+        upload_in_progress = False
+
+
 # ============================
-# Upload & Reindex (ZIP)
+# Upload & Reindex
 # ============================
 
 @app.post("/upload-repo", response_model=UploadStatus)
-async def upload_repo(file: UploadFile = File(...)):
+async def upload_repo(
+    background_tasks: BackgroundTasks,
+    file: UploadFile = File(...)
+):
     global upload_in_progress
-    
-    if upload_in_progress:
-        raise HTTPException(
-            status_code=409,
-            detail="Another upload is already in progress. Please wait."
-        )
-    
-    if not file.filename or not file.filename.lower().endswith(".zip"):
-        raise HTTPException(
-            status_code=400, 
-            detail="Only .zip files are supported"
-        )
 
-    upload_in_progress = True
-    temp_zip = None
-    
+    with upload_lock:
+        if upload_in_progress:
+            raise HTTPException(
+                status_code=409,
+                detail="Another upload/indexing process is already in progress."
+            )
+        upload_in_progress = True
+
+    temp_zip: Path | None = None
+
     try:
-        logger.info(f"Starting upload of repository: {file.filename}")
-        
-        # Clear repo contents without deleting mount point
+        # Validate file type
+        if not file.filename or not file.filename.endswith(".zip"):
+            raise HTTPException(
+                status_code=400,
+                detail="Only .zip files are supported."
+            )
+
+        logger.info(f"Upload request received for: {file.filename}")
+
+        # Clear existing repo contents
         logger.info("Clearing existing repository contents...")
         for item in REPO_PATH.iterdir():
             try:
@@ -307,107 +385,67 @@ async def upload_repo(file: UploadFile = File(...)):
                     item.unlink()
             except Exception as e:
                 logger.warning(f"Could not remove {item}: {e}")
-        
-        # Save uploaded file with size check
+
+        # Save uploaded file to disk (streaming, non-blocking)
         temp_zip = REPO_PATH / f"temp_{uuid.uuid4().hex[:8]}_{file.filename}"
-        
-        logger.info("Saving uploaded file...")
-        chunk_size = 1024 * 1024  # 1MB chunks
+
         total_size = 0
-        
+        chunk_size = 1024 * 1024  # 1MB
+
         with open(temp_zip, "wb") as f:
             while chunk := await file.read(chunk_size):
                 total_size += len(chunk)
                 if total_size > MAX_UPLOAD_SIZE:
                     raise HTTPException(
                         status_code=413,
-                        detail=f"File too large. Maximum size is {MAX_UPLOAD_SIZE / (1024*1024):.0f}MB"
+                        detail=f"File too large. Maximum allowed size is "
+                               f"{MAX_UPLOAD_SIZE / (1024*1024):.0f}MB."
                     )
                 f.write(chunk)
-        
-        logger.info(f"File saved ({total_size / (1024*1024):.1f}MB), unpacking...")
-        
-        # Unpack archive
-        try:
-            shutil.unpack_archive(temp_zip, REPO_PATH)
-        except Exception as e:
-            logger.error(f"Failed to unpack archive: {e}")
-            raise HTTPException(
-                status_code=400,
-                detail=f"Failed to unpack ZIP file: {str(e)}"
-            )
-        finally:
-            # Clean up temp zip file
-            if temp_zip and temp_zip.exists():
-                temp_zip.unlink()
-                temp_zip = None
-        
-        # Count files for estimation
-        logger.info("Analyzing repository contents...")
-        code_extensions = {'.java', '.py', '.js', '.ts', '.cpp', '.c', '.h', '.go', '.rs'}
-        file_count = count_files_in_directory(REPO_PATH, code_extensions)
-        
-        if file_count > MAX_FILES_TO_PROCESS:
-            logger.warning(f"Repository has {file_count} files (exceeds recommended limit)")
-        
-        estimated_time = estimate_processing_time(file_count)
-        logger.info(f"Found {file_count} code files, estimated processing time: {estimated_time}")
-        
-        # Start indexing in background with live logging
-        logger.info("Starting background indexing process...")
-        process = subprocess.Popen(
-            [
-                "python",
-                "-m",
-                "codebase_rag.main",
-                "start",
-                "--repo-path",
-                str(REPO_PATH),
-                "--update-graph",
-                "--clean",
-                "--batch-size",
-                str(settings.MEMGRAPH_BATCH_SIZE),
-                "--orchestrator",
-                f"{settings.ORCHESTRATOR_PROVIDER}:{settings.ORCHESTRATOR_MODEL}",
-                "--cypher",
-                f"{settings.CYPHER_PROVIDER}:{settings.CYPHER_MODEL}",
-                "--no-confirm",
-            ],
-            stdout=None,  # Inherit stdout from parent (shows in Docker logs)
-            stderr=None,  # Inherit stderr from parent (shows in Docker logs)
+
+        logger.info(
+            f"Upload complete ({total_size / (1024*1024):.1f}MB). "
+            "Starting background processing..."
         )
-        
-        logger.success(f"Repository uploaded successfully. Indexing started in background (PID: {process.pid})")
-        
+
+        # Run heavy unpacking + indexing OUTSIDE request lifecycle
+        background_tasks.add_task(process_uploaded_repo, temp_zip)
+
         return UploadStatus(
             status="success",
-            message=f"Repository uploaded and indexing started. Found {file_count} code files.",
-            file_count=file_count,
-            estimated_time=estimated_time
+            message="Repository uploaded successfully. Indexing started in background.",
+            file_count=None,
+            estimated_time=None,
         )
-        
+
     except HTTPException:
+        upload_in_progress = False
+        if temp_zip and temp_zip.exists():
+            temp_zip.unlink(missing_ok=True)
         raise
+
     except Exception as e:
+        upload_in_progress = False
+        if temp_zip and temp_zip.exists():
+            temp_zip.unlink(missing_ok=True)
         logger.error(f"Upload failed: {e}", exc_info=True)
         raise HTTPException(
             status_code=500,
             detail=f"Upload failed: {str(e)}"
         )
-    finally:
-        # Clean up temp file if it still exists
-        if temp_zip and temp_zip.exists():
-            try:
-                temp_zip.unlink()
-            except Exception as e:
-                logger.warning(f"Could not clean up temp file: {e}")
-        
-        upload_in_progress = False
 
 
 @app.get("/upload-status")
 async def upload_status():
     """Check if an upload/indexing is in progress."""
+    # Check if process is still running
+    if indexing_process and indexing_process.poll() is None:
+        return {
+            "upload_in_progress": True,
+            "status": "indexing",
+            "pid": indexing_process.pid
+        }
+    
     return {
         "upload_in_progress": upload_in_progress,
         "status": "indexing" if upload_in_progress else "idle"

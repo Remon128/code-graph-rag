@@ -1,5 +1,6 @@
 """
-Streamlit web interface for code-graph-rag with improved error handling.
+Streamlit web interface for code-graph-rag
+Chat UI + Project Upload
 """
 
 import os
@@ -7,13 +8,17 @@ import time
 import requests
 import streamlit as st
 from streamlit_chat import message as st_message
-from PIL import Image
 from pathlib import Path
 
+# ===============================
 # Configuration
-API_URL = os.getenv("API_URL", "http://localhost:8000")
+# ===============================
+INTERNAL_API_URL = os.getenv("INTERNAL_API_URL", "http://backend:8000")
+PUBLIC_API_URL = os.getenv("PUBLIC_API_URL", "http://localhost:8000")
 
-# Page configuration
+# ===============================
+# Page config
+# ===============================
 st.set_page_config(
     page_title="Code Mind",
     page_icon="🤖",
@@ -21,146 +26,105 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-# -------------------- Styles --------------------
+# ===============================
+# Styles
+# ===============================
 st.markdown(
     """
 <style>
-.main-header {
-    font-size: 2.5rem;
-    font-weight: bold;
-    color: #1f77b4;
-    margin-bottom: 1rem;
-}
-.status-box {
-    padding: 1rem;
-    border-radius: 0.5rem;
-    margin-bottom: 1rem;
-}
-.status-healthy {
-    background-color: #d4edda;
-    border: 1px solid #c3e6cb;
-    color: #155724;
-}
-.status-error {
-    background-color: #f8d7da;
-    border: 1px solid #f5c6cb;
-    color: #721c24;
-}
-.status-warning {
-    background-color: #fff3cd;
-    border: 1px solid #ffeeba;
-    color: #856404;
-}
 .upload-box {
     padding: 1rem;
     border-radius: 0.5rem;
     border: 2px dashed #1f77b4;
     margin-bottom: 1rem;
 }
+.status-warning {
+    background-color: #fff3cd;
+    border: 1px solid #ffeeba;
+    color: #856404;
+    padding: 0.75rem;
+    border-radius: 0.5rem;
+}
+.indexing-banner {
+    background: linear-gradient(90deg, #ff9800 0%, #ff5722 100%);
+    color: white;
+    padding: 1.25rem;
+    border-radius: 0.5rem;
+    text-align: center;
+    font-weight: bold;
+}
 </style>
 """,
     unsafe_allow_html=True,
 )
 
-# -------------------- Helpers --------------------
+# ===============================
+# Helpers
+# ===============================
 def check_api_health():
     try:
-        r = requests.get(f"{API_URL}/health", timeout=5)
-        return r.status_code == 200, r.json() if r.ok else None
+        r = requests.get(f"{INTERNAL_API_URL}/health", timeout=5)
+        return r.ok
     except Exception:
-        return False, None
+        return False
 
 
 def check_upload_status():
-    """Check if an upload is in progress."""
     try:
-        r = requests.get(f"{API_URL}/upload-status", timeout=5)
-        if r.ok:
-            return r.json()
-        return {"upload_in_progress": False, "status": "unknown"}
+        r = requests.get(f"{INTERNAL_API_URL}/upload-status", timeout=5)
+        return r.json() if r.ok else {"upload_in_progress": False}
     except Exception:
-        return {"upload_in_progress": False, "status": "error"}
+        return {"upload_in_progress": False}
 
 
-def send_message(message: str, session_id: str | None = None):
+def send_message(message, session_id=None):
     payload = {"message": message}
     if session_id:
         payload["session_id"] = session_id
 
     try:
-        r = requests.post(f"{API_URL}/chat", json=payload, timeout=300)
-        if r.ok:
-            return r.json()
-        else:
-            error_detail = "Unknown error"
-            try:
-                error_data = r.json()
-                error_detail = error_data.get("detail", r.text)
-            except:
-                error_detail = r.text
-            
-            return {
-                "response": f"❌ Error: {error_detail}",
-                "status": "error",
-                "session_id": session_id
-            }
-    except requests.exceptions.Timeout:
-        return {
-            "response": "❌ Request timed out. The system might be processing a large query.",
-            "status": "error",
-            "session_id": session_id
-        }
-    except Exception as e:
-        return {
-            "response": f"❌ Connection error: {str(e)}",
-            "status": "error",
-            "session_id": session_id
-        }
-
-
-def upload_repo(zip_file):
-    """Upload repository with proper error handling."""
-    try:
-        files = {"file": (zip_file.name, zip_file.getvalue(), "application/zip")}
-        
-        # Use longer timeout for large files
-        timeout = 600  # 10 minutes
-        
         r = requests.post(
-            f"{API_URL}/upload-repo",
-            files=files,
-            timeout=timeout
+            f"{INTERNAL_API_URL}/chat",
+            json=payload,
+            timeout=300,
         )
-        
-        if r.ok:
+
+        if r.status_code == 200:
             return r.json()
-        else:
-            error_detail = "Unknown error"
-            try:
-                error_data = r.json()
-                error_detail = error_data.get("detail", r.text)
-            except:
-                error_detail = r.text
-            
-            raise RuntimeError(error_detail)
-            
-    except requests.exceptions.Timeout:
-        raise RuntimeError("Upload timed out. File might be too large.")
-    except requests.exceptions.ConnectionError:
-        raise RuntimeError("Connection error. Is the backend running?")
-    except Exception as e:
-        raise RuntimeError(str(e))
+
+        # 🔴 Handle backend errors gracefully
+        return {
+            "response": f"Error: {r.status_code} - {r.text}",
+            "session_id": session_id,
+            "status": "error",
+        }
+
+    except requests.exceptions.RequestException as e:
+        return {
+            "response": f"Connection error: {str(e)}",
+            "session_id": session_id,
+            "status": "error",
+        }
+
+    except ValueError:
+        # JSONDecodeError lands here
+        return {
+            "response": "Error: Backend returned an invalid response.",
+            "session_id": session_id,
+            "status": "error",
+        }
 
 
 def init_state():
     st.session_state.setdefault("messages", [])
     st.session_state.setdefault("session_id", None)
-    st.session_state.setdefault("api_healthy", False)
-    st.session_state.setdefault("indexing", False)
-    st.session_state.setdefault("upload_result", None)
+    st.session_state.setdefault("processing_message", False)
+    st.session_state.setdefault("last_upload_check", 0)
 
 
-# -------------------- UI --------------------
+# ===============================
+# UI
+# ===============================
 def main():
     init_state()
 
@@ -169,175 +133,175 @@ def main():
         logo = Path(__file__).parent / "assets" / "ejada_logo.png"
         if logo.exists():
             st.image(str(logo), width=300)
-        else:
-            raise FileNotFoundError
     except Exception:
-        st.markdown('<div class="main-header">🤖 Ejada</div>', unsafe_allow_html=True)
+        st.title("Ejada")
 
-    st.markdown("### Chat with your codebase")
+    st.markdown("### Code reverse engineering")
 
-    # Check upload status
-    upload_status_data = check_upload_status()
-    is_indexing = upload_status_data.get("upload_in_progress", False)
+    # Upload status polling
+    now = time.time()
+    if now - st.session_state.last_upload_check > 2:
+        upload_status = check_upload_status()
+        st.session_state.last_upload_check = now
+    else:
+        upload_status = {"upload_in_progress": False}
 
-    # ---------------- Sidebar ----------------
+    is_indexing = upload_status.get("upload_in_progress", False)
+
+    # ================= Sidebar =================
     with st.sidebar:
         st.header("📂 Project Upload")
 
-        # Show indexing status if in progress
         if is_indexing:
             st.markdown(
-                '<div class="status-box status-warning">⏳ <b>Indexing in Progress</b><br/>Please wait...</div>',
+                '<div class="status-warning">⏳ Indexing in progress…</div>',
                 unsafe_allow_html=True,
             )
-        
+
         st.markdown(
-            '<div class="upload-box">Upload a <b>.zip</b> repository to reindex<br/>'
-            '<small>Limit: 500MB | Supports Java, Python, JS, TS, C++, Go, Rust</small></div>',
+            """
+            <div class="upload-box">
+                Upload a <b>.zip</b> repository to reindex<br/>
+                <small>Limit: 500MB | Java, Python, JS, TS, C++, Go, Rust</small>
+            </div>
+            """,
             unsafe_allow_html=True,
         )
 
-        uploaded = st.file_uploader(
-            "Upload repository (ZIP only)",
-            type=["zip"],
-            accept_multiple_files=False,
-            disabled=is_indexing,
+        st.components.v1.html(
+            f"""
+            <form action="{PUBLIC_API_URL}/upload-repo"
+                  method="post"
+                  enctype="multipart/form-data"
+                  target="_blank">
+                <input type="file" name="file" accept=".zip" required style="width:100%; margin-bottom:10px;" />
+                <button type="submit"
+                        style="width:100%; padding:10px; background:#1f77b4; color:white;
+                               border:none; border-radius:6px; font-weight:bold;">
+                    🚀 Upload & Reindex
+                </button>
+            </form>
+            """,
+            height=160,
         )
 
-        upload_button_disabled = is_indexing or uploaded is None
-        
-        if st.button(
-            "🚀 Upload & Reindex",
-            use_container_width=True,
-            disabled=upload_button_disabled
-        ):
-            if uploaded:
-                # Check file size before uploading
-                file_size_mb = len(uploaded.getvalue()) / (1024 * 1024)
-                
-                if file_size_mb > 500:
-                    st.error(f"File too large ({file_size_mb:.1f}MB). Maximum size is 500MB.")
-                else:
-                    st.session_state.messages = []
-                    st.session_state.session_id = None
-                    st.session_state.upload_result = None
-
-                    with st.spinner(f"Uploading repository ({file_size_mb:.1f}MB)..."):
-                        try:
-                            result = upload_repo(uploaded)
-                            st.session_state.upload_result = {
-                                "success": True,
-                                "data": result
-                            }
-                        except Exception as e:
-                            st.session_state.upload_result = {
-                                "success": False,
-                                "error": str(e)
-                            }
-                        finally:
-                            st.rerun()
-
-        # Display upload result if available
-        if st.session_state.upload_result:
-            result = st.session_state.upload_result
-            if result["success"]:
-                data = result["data"]
-                st.success(data.get("message", "Upload successful!"))
-                
-                if data.get("file_count"):
-                    st.info(f"📊 **Files to process:** {data['file_count']:,}")
-                
-                if data.get("estimated_time"):
-                    st.info(f"⏱️ **Estimated time:** {data['estimated_time']}")
-                
-                if st.button("✅ Dismiss", use_container_width=True):
-                    st.session_state.upload_result = None
-                    st.rerun()
-            else:
-                st.error(f"Upload failed: {result['error']}")
-                if st.button("❌ Dismiss", use_container_width=True):
-                    st.session_state.upload_result = None
-                    st.rerun()
-
         st.divider()
+        st.markdown(
+            """
+            ### ✅ What is supported now
 
-        st.header("⚙️ System Status")
-        healthy, data = check_api_health()
-        st.session_state.api_healthy = healthy
+            - 📦 Uploading repositories directly from the UI  
 
-        if healthy:
-            st.markdown(
-                '<div class="status-box status-healthy">✅ API Healthy</div>',
-                unsafe_allow_html=True,
-            )
-            
-            if data:
-                # Show upload status
-                if data.get("upload_in_progress"):
-                    st.warning("⏳ Indexing in progress...")
-                
-                status_info = {
-                    "Memgraph": "✅" if data.get("memgraph_connected") else "❌",
-                    "Agent": "✅" if data.get("agent_initialized") else "❌",
-                    "Status": "Indexing" if data.get("upload_in_progress") else "Ready"
-                }
-                st.json(status_info)
-        else:
-            st.markdown(
-                '<div class="status-box status-error">❌ API Down</div>',
-                unsafe_allow_html=True,
-            )
+            ---
 
-        st.divider()
+            **Deep code-centric analysis**, including:
 
-        if st.button("🗑️ Clear Chat", use_container_width=True):
-            st.session_state.messages = []
-            st.session_state.session_id = None
-            st.rerun()
+            **🔍 Code Understanding**
+            - File-level, class-level, and method-level questions  
+            - Very specific and detailed implementation questions  
 
-    # ---------------- Main Area ----------------
+            **🧠 Semantic Understanding**
+            - Search by *meaning*, not exact keywords  
+
+            **🔗 Relationship Analysis**
+            - Methods inside a class  
+            - Methods inside a file  
+            - Method-to-method calling relationships  
+
+            **📝 Code Review**
+            - Positive or negative feedback  
+            - Suggestions to improve quality or readability  
+
+            ---
+
+            ### 🧪 Example Queries
+
+            - *What are the methods in `SamaRbsServices` class?*  
+            - *What is the method that blocks a party?*  
+            - *What are the parts related to debit cards?*  
+            - *What are the business rules for `BkOrdInq`?*  
+
+            ---
+
+            ### 🚧 Coming in future versions
+
+            - 🌍 High-level system overview questions  
+            - *“Give me an overview of the system”*  
+            - *“Explain the architecture”*  
+                        """
+        )
+
+    # ================= Main =================
     if is_indexing:
-        st.warning("⏳ Indexing in progress. Chat is temporarily disabled. This may take several minutes for large repositories.")
-        
-        # Show progress indicator
-        with st.spinner("Processing repository..."):
-            time.sleep(2)  # Prevent too frequent refreshes
-            st.rerun()
+        st.markdown(
+            '<div class="indexing-banner">⏳ Repository Indexing in Progress – Chat Disabled</div>',
+            unsafe_allow_html=True,
+        )
         return
 
-    if not st.session_state.api_healthy:
-        st.warning("⚠️ API not available. Please check the system status in the sidebar.")
+    if not check_api_health():
+        st.warning("⚠️ API not available")
         return
 
-    # Display chat messages
     for i, msg in enumerate(st.session_state.messages):
-        st_message(msg["content"], is_user=msg["role"] == "user", key=str(i))
+        st_message(msg["content"], is_user=msg["role"] == "user", key=f"msg_{i}")
 
     st.divider()
 
-    # Chat input form
-    with st.form("chat_form", clear_on_submit=True):
-        user_input = st.text_area(
-            "Your message",
-            placeholder="Ask something about your codebase…",
-            height=100,
-            label_visibility="collapsed",
-        )
-        submitted = st.form_submit_button("Send 📤")
+    # 🔑 Dynamic form key (CRITICAL)
+    form_key = f"chat_form_{len(st.session_state.messages)}"
 
-    if submitted and user_input:
+    with st.form(form_key, clear_on_submit=True):
+        col1, col2 = st.columns([6, 1])
+
+        with col1:
+            user_input = st.text_area(
+                "Your message",
+                placeholder="Ask a question about your codebase",
+                height=100,
+                label_visibility="collapsed",
+            )
+
+        with col2:
+            st.markdown(
+            """
+            <style>
+            div[data-testid="stForm"] div.stButton > button {
+                margin-top: -18px;
+            }
+            </style>
+            """,
+            unsafe_allow_html=True,
+        )
+            send_btn = st.form_submit_button("Send 📤", use_container_width=True)
+            clear_btn = st.form_submit_button(" Clear Chat 🗑️", use_container_width=True)
+
+            st.markdown("</div>", unsafe_allow_html=True)
+
+    # Handle Clear Chat
+    if clear_btn:
+        st.session_state.messages = []
+        st.session_state.session_id = None
+        st.session_state.processing_message = False
+        st.rerun()
+
+    # 🛑 Infinite loop guard
+    if send_btn and user_input and not st.session_state.processing_message:
+        st.session_state.processing_message = True
+
         st.session_state.messages.append({"role": "user", "content": user_input})
 
-        with st.spinner("🤔 Thinking..."):
+        with st.spinner("🤔 Agent is thinking..."):
             result = send_message(user_input, st.session_state.session_id)
 
         if result.get("session_id"):
             st.session_state.session_id = result["session_id"]
 
-        response_content = result.get("response", "No response received")
         st.session_state.messages.append(
-            {"role": "assistant", "content": response_content}
+            {"role": "assistant", "content": result.get("response", "")}
         )
+
+        st.session_state.processing_message = False
         st.rerun()
 
 
