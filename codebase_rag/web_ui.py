@@ -6,8 +6,6 @@ Place this file in: codebase_rag/web_ui.py
 import os
 import requests
 import streamlit as st
-from streamlit_chat import message as st_message
-from PIL import Image
 from pathlib import Path
 
 # Configuration - Use environment variable for Docker compatibility
@@ -18,41 +16,196 @@ st.set_page_config(
     page_title="Code Mind",
     page_icon="🤖",
     layout="wide",
-    initial_sidebar_state="expanded",
+    initial_sidebar_state="collapsed",
 )
 
-# Custom CSS
+# Custom CSS — Ejada/Code Mind design
 st.markdown(
     """
 <style>
-.main-header {
-    font-size: 2.5rem;
-    font-weight: bold;
-    color: #1f77b4;
-    margin-bottom: 1rem;
+/* Hide default Streamlit header and sidebar toggle */
+[data-testid="stSidebar"] { display: none; }
+[data-testid="collapsedControl"] { display: none; }
+#MainMenu { visibility: hidden; }
+footer { visibility: hidden; }
+header { visibility: hidden; }
+
+/* Full-page layout */
+.block-container {
+    padding: 0 !important;
+    max-width: 100% !important;
 }
-.status-box {
-    padding: 1rem;
-    border-radius: 0.5rem;
-    margin-bottom: 1rem;
+
+/* Top header bar */
+.ejada-header {
+    background-color: #1a1f6e;
+    color: white;
+    padding: 0 24px;
+    height: 56px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    position: sticky;
+    top: 0;
+    z-index: 999;
 }
-.status-healthy {
-    background-color: #d4edda;
-    border: 1px solid #c3e6cb;
-    color: #155724;
+.ejada-header-left {
+    display: flex;
+    align-items: center;
+    gap: 10px;
 }
-.status-error {
-    background-color: #f8d7da;
-    border: 1px solid #f5c6cb;
-    color: #721c24;
+.ejada-header-right {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 15px;
+    font-weight: 500;
 }
-.chat-container {
-    height: 600px;
-    overflow-y: auto;
-    padding: 1rem;
-    border: 1px solid #ddd;
-    border-radius: 0.5rem;
-    margin-bottom: 1rem;
+.ejada-logo-text {
+    font-size: 13px;
+    color: #a8b4ff;
+    letter-spacing: 0.5px;
+}
+.ejada-badge {
+    background: #2d35a0;
+    color: #a8b4ff;
+    font-size: 11px;
+    padding: 3px 10px;
+    border-radius: 20px;
+    border: 1px solid #4a55c8;
+}
+.ejada-btn {
+    background: #2d35a0;
+    color: white;
+    border: 1px solid #4a55c8;
+    border-radius: 20px;
+    padding: 5px 14px;
+    font-size: 12px;
+    cursor: pointer;
+}
+.ejada-lang-btn {
+    background: transparent;
+    color: #a8b4ff;
+    border: 1px solid #4a55c8;
+    border-radius: 20px;
+    padding: 5px 12px;
+    font-size: 12px;
+}
+
+/* Chat messages */
+.chat-wrapper {
+    max-width: 860px;
+    margin: 0 auto;
+    padding: 24px 16px 120px;
+}
+.msg-bot-row {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 16px;
+    max-width: 80%;
+}
+.bot-avatar {
+    width: 34px;
+    height: 34px;
+    min-width: 34px;
+    background: #1a1f6e;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+.bot-avatar-inner {
+    width: 18px;
+    height: 18px;
+    background: white;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+.bot-avatar-dot {
+    width: 8px;
+    height: 8px;
+    background: #1a1f6e;
+    border-radius: 50%;
+}
+.msg-bubble-bot {
+    background: white;
+    border: 1px solid #e0e0e0;
+    border-radius: 0 12px 12px 12px;
+    padding: 12px 14px;
+}
+.msg-sender {
+    font-size: 12px;
+    font-weight: 600;
+    color: #1a1f6e;
+    margin-bottom: 5px;
+}
+.msg-text {
+    font-size: 14px;
+    color: #222;
+    line-height: 1.6;
+}
+.msg-time {
+    font-size: 11px;
+    color: #888;
+    margin-top: 5px;
+}
+.msg-user-row {
+    display: flex;
+    justify-content: flex-end;
+    margin-bottom: 16px;
+}
+.msg-bubble-user {
+    background: #1a1f6e;
+    color: white;
+    border-radius: 12px 0 12px 12px;
+    padding: 10px 14px;
+    max-width: 70%;
+    font-size: 14px;
+    line-height: 1.6;
+}
+
+/* Footer bar */
+.ejada-footer {
+    background: #1a1f6e;
+    color: #a8b4ff;
+    font-size: 10px;
+    padding: 6px 20px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    z-index: 998;
+}
+
+/* Input area override */
+.stTextArea textarea {
+    border-radius: 24px !important;
+    background: #f4f4f8 !important;
+    border: 1px solid #ddd !important;
+    font-size: 13px !important;
+    padding: 12px 16px !important;
+    resize: none !important;
+}
+.stButton button {
+    border-radius: 20px !important;
+    background: #1a1f6e !important;
+    color: white !important;
+    border: none !important;
+    font-size: 13px !important;
+}
+.stButton button:hover {
+    background: #2d35a0 !important;
+}
+.disclaimer-text {
+    font-size: 11px;
+    color: #888;
+    text-align: center;
+    margin-top: 4px;
 }
 </style>
 """,
@@ -61,7 +214,6 @@ st.markdown(
 
 
 def check_api_health():
-    """Check if the API is running and healthy."""
     try:
         response = requests.get(f"{API_URL}/health", timeout=5)
         if response.status_code == 200:
@@ -72,7 +224,6 @@ def check_api_health():
 
 
 def send_message(message: str, session_id: str | None = None):
-    """Send a message to the API and get a response."""
     try:
         payload = {"message": message}
         if session_id:
@@ -81,7 +232,7 @@ def send_message(message: str, session_id: str | None = None):
         response = requests.post(
             f"{API_URL}/chat",
             json=payload,
-            timeout=300,  # 5 minutes timeout for long operations
+            timeout=300,
         )
 
         if response.status_code == 200:
@@ -92,13 +243,7 @@ def send_message(message: str, session_id: str | None = None):
                 "session_id": session_id,
                 "status": "error",
             }
-    except requests.exceptions.Timeout:
-        return {
-            "response": "Request timed out. The operation might still be running on the server.",
-            "session_id": session_id,
-            "status": "error",
-        }
-    except requests.exceptions.RequestException as e:
+    except Exception as e:
         return {
             "response": f"Connection error: {str(e)}",
             "session_id": session_id,
@@ -107,7 +252,6 @@ def send_message(message: str, session_id: str | None = None):
 
 
 def init_session_state():
-    """Initialize session state variables."""
     if "messages" not in st.session_state:
         st.session_state.messages = []
     if "session_id" not in st.session_state:
@@ -116,154 +260,155 @@ def init_session_state():
         st.session_state.api_healthy = False
 
 
+def render_header():
+    st.markdown(
+        """
+<div class="ejada-header">
+    <div class="ejada-header-left">
+        <button class="ejada-btn">+ New chat</button>
+        <button class="ejada-lang-btn">EN</button>
+        <span class="ejada-badge">Beta</span>
+    </div>
+    <div class="ejada-header-right">
+        <span class="ejada-logo-text">ejada</span>
+        <span>Code Mind — Smart Assistant</span>
+        <div style="width:28px;height:28px;background:#2d35a0;border-radius:50%;border:1px solid #4a55c8;"></div>
+    </div>
+</div>
+""",
+        unsafe_allow_html=True,
+    )
+
+
+def render_footer():
+    st.markdown(
+        """
+<div class="ejada-footer">
+    <span>© 2026 Ejada Systems. All rights reserved.</span>
+    <span>Following OWASP Top 10 for LLM Applications &amp; Generative AI</span>
+</div>
+""",
+        unsafe_allow_html=True,
+    )
+
+
+def render_message(role: str, content: str):
+    from datetime import datetime
+    time_str = datetime.now().strftime("%I:%M %p")
+
+    if role == "assistant":
+        st.markdown(
+            f"""
+<div class="msg-bot-row">
+    <div class="bot-avatar">
+        <div class="bot-avatar-inner">
+            <div class="bot-avatar-dot"></div>
+        </div>
+    </div>
+    <div>
+        <div class="msg-bubble-bot">
+            <div class="msg-sender">Code Mind</div>
+            <div class="msg-text">{content}</div>
+            <div class="msg-time">{time_str}</div>
+        </div>
+    </div>
+</div>
+""",
+            unsafe_allow_html=True,
+        )
+    else:
+        st.markdown(
+            f"""
+<div class="msg-user-row">
+    <div class="msg-bubble-user">{content}</div>
+</div>
+""",
+            unsafe_allow_html=True,
+        )
+
+
 def main():
-    """Main Streamlit application."""
     init_session_state()
 
-    # Header with Ejada Logo
-    try:
-        logo_path = Path(__file__).parent / "assets" / "ejada_logo.png"
-        if logo_path.exists():
-            st.image(str(logo_path), width=300)
-        else:
-            raise FileNotFoundError(logo_path)
-    except Exception as e:
-        st.warning(f"Could not load logo: {e}")
-        st.markdown('<div class="main-header">🤖 Ejada</div>', unsafe_allow_html=True)
+    render_header()
 
-    st.markdown("### chat with code")
+    # API health check
+    is_healthy, _ = check_api_health()
+    st.session_state.api_healthy = is_healthy
 
-    # Sidebar
-    with st.sidebar:
-        st.header("⚙️ Settings")
-
-        # Display API URL
-        st.info(f"**API URL:** {API_URL}")
-
-        # API Health Check
-        is_healthy, health_data = check_api_health()
-        st.session_state.api_healthy = is_healthy
-
-        if is_healthy:
-            st.markdown(
-                '<div class="status-box status-healthy">✅ API Status: Healthy</div>',
-                unsafe_allow_html=True,
-            )
-            if health_data:
-                st.json(
-                    {
-                        "Memgraph": (
-                            "Connected"
-                            if health_data.get("memgraph_connected")
-                            else "Disconnected"
-                        ),
-                        "Agent": (
-                            "Initialized"
-                            if health_data.get("agent_initialized")
-                            else "Not Initialized"
-                        ),
-                    }
-                )
-        else:
-            st.markdown(
-                '<div class="status-box status-error">❌ API Status: Unavailable</div>',
-                unsafe_allow_html=True,
-            )
-            st.error(
-                "API server is not responding. Please check if all Docker containers are running:\n```bash\ndocker-compose ps\n```"
-            )
-
-        st.divider()
-
-        # Session Info
-        st.subheader("📊 Session Info")
-        if st.session_state.session_id:
-            st.info(f"**Session ID:** {st.session_state.session_id[:8]}...")
-            st.metric("Messages", len(st.session_state.messages))
-        else:
-            st.info("No active session")
-
-        # Clear Chat Button
-        if st.button("🗑️ Clear Chat", use_container_width=True):
-            st.session_state.messages = []
-            st.session_state.session_id = None
-            st.rerun()
-
-        st.divider()
-
-        # About
-        st.subheader("ℹ️ About")
-        st.markdown(
-            """
-        This interface allows you to:
-        - Query your codebase
-        - Search through code semantically
-        - Read and modify files
-        - Execute shell commands
-        - Analyze documents
-        
-        The agent has access to all code-graph-rag tools.
-        """
-        )
-
-    # Main Chat Area
     if not st.session_state.api_healthy:
-        st.warning(
-            "⚠️ API is not available. Please ensure all Docker services are running."
-        )
+        st.warning("⚠️ API is not available. Please ensure the backend is running.")
+        render_footer()
         return
 
-    # Display chat messages
-    chat_container = st.container()
-    with chat_container:
-        for idx, msg in enumerate(st.session_state.messages):
-            if msg["role"] == "user":
-                st_message(msg["content"], is_user=True, key=f"user_{idx}")
-            else:
-                st_message(msg["content"], is_user=False, key=f"assistant_{idx}")
+    # Welcome message if no chat yet
+    st.markdown('<div class="chat-wrapper">', unsafe_allow_html=True)
 
-    # Chat Input
+    if not st.session_state.messages:
+        from datetime import datetime
+        time_str = datetime.now().strftime("%I:%M %p")
+        st.markdown(
+            f"""
+<div class="msg-bot-row">
+    <div class="bot-avatar">
+        <div class="bot-avatar-inner">
+            <div class="bot-avatar-dot"></div>
+        </div>
+    </div>
+    <div>
+        <div class="msg-bubble-bot">
+            <div class="msg-sender">Code Mind</div>
+            <div class="msg-text">Welcome! I am Code Mind, the smart assistant. How can I help you?</div>
+            <div class="msg-time">{time_str}</div>
+        </div>
+    </div>
+</div>
+""",
+            unsafe_allow_html=True,
+        )
+
+    # Render chat history
+    for msg in st.session_state.messages:
+        render_message(msg["role"], msg["content"])
+
+    st.markdown("</div>", unsafe_allow_html=True)
+
     st.divider()
 
-    # Use a form to handle Enter key submission
+    # Input area
     with st.form(key="chat_form", clear_on_submit=True):
-        col1, col2 = st.columns([6, 1])
-
+        col1, col2, col3 = st.columns([7, 1, 1])
         with col1:
             user_input = st.text_area(
-                "Your message:",
-                placeholder="Ask a question about your codebase",
-                height=100,
+                "Message",
+                placeholder="Ask any question about your codebase...",
+                height=80,
                 label_visibility="collapsed",
             )
-
         with col2:
             submit_button = st.form_submit_button("Send 📤", use_container_width=True)
+        with col3:
+            clear_button = st.form_submit_button("🗑️ Clear", use_container_width=True)
 
-    # Process message
+    st.markdown('<div class="disclaimer-text">Code Mind may display inaccurate information</div>', unsafe_allow_html=True)
+
+    if clear_button:
+        st.session_state.messages = []
+        st.session_state.session_id = None
+        st.rerun()
+
     if submit_button and user_input:
-        # Add user message to chat
         st.session_state.messages.append({"role": "user", "content": user_input})
-
-        # Show thinking indicator
-        with st.spinner("🤔 Agent is thinking..."):
-            # Send to API
+        with st.spinner("🤔 Code Mind is thinking..."):
             result = send_message(user_input, st.session_state.session_id)
-
-            # Update session ID
             if result.get("session_id"):
                 st.session_state.session_id = result["session_id"]
-
-            # Add assistant response to chat
             st.session_state.messages.append(
-                {
-                    "role": "assistant",
-                    "content": result.get("response", "Error: No response received"),
-                }
+                {"role": "assistant", "content": result.get("response", "")}
             )
-
-        # Rerun to update chat display
         st.rerun()
+
+    render_footer()
 
 
 if __name__ == "__main__":

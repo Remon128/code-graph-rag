@@ -20,7 +20,7 @@ services:
     image: memgraph/lab
     container_name: code-graph-lab
     ports:
-      - "3000:3000"
+      - "3001:3000"
     environment:
       QUICK_CONNECT_MG_HOST: memgraph
       QUICK_CONNECT_MG_PORT: 7687
@@ -35,7 +35,7 @@ services:
       dockerfile: Dockerfile.backend
     container_name: code-graph-backend
     ports:
-      - "8000:8000"
+      - "8009:8000"
     environment:
       MEMGRAPH_HOST: memgraph
       MEMGRAPH_PORT: 7687
@@ -62,9 +62,18 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.frontend
-    container_name: code-graph-frontend
+    container_name: code-graph-landing
     ports:
-      - "8501:8501"
+      - "4058:80"
+    restart: unless-stopped
+
+  streamlit:
+    build:
+      context: .
+      dockerfile: Dockerfile.streamlit
+    container_name: code-graph-streamlit
+    ports:
+      - "4070:8501"        
     environment:
       API_URL: http://backend:8000
     depends_on:

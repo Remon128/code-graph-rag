@@ -1,0 +1,595 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Code Mind — ejada Smart Assistant</title>
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet"/>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --navy: #1a1f6e;
+      --navy-mid: #2d35a0;
+      --navy-light: #4a55c8;
+      --green: #00e676;
+      --green-mid: #00c853;
+      --white: #ffffff;
+      --off-white: #f4f6fb;
+      --gray: #6b7280;
+      --light-border: #e5e7eb;
+    }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      font-family: 'DM Sans', sans-serif;
+      background: var(--white);
+      color: #111;
+      overflow-x: hidden;
+    }
+
+    /* ── NAV ── */
+    nav {
+      position: fixed; top: 0; left: 0; right: 0; z-index: 999;
+      background: rgba(255,255,255,0.95);
+      backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--light-border);
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 0 48px; height: 64px;
+    }
+    .nav-logo { display: flex; align-items: center; gap: 8px; text-decoration: none; }
+    .nav-logo svg { width: 36px; height: 36px; }
+    .nav-logo span { font-family: 'Syne', sans-serif; font-size: 20px; font-weight: 700; color: var(--navy); }
+    .nav-links { display: flex; align-items: center; gap: 32px; }
+    .nav-links a { text-decoration: none; color: #333; font-size: 14px; font-weight: 500; transition: color 0.2s; }
+    .nav-links a:hover { color: var(--navy); }
+    .nav-right { display: flex; align-items: center; gap: 16px; }
+    .btn-open-chat {
+      background: var(--navy); color: white; border: none;
+      border-radius: 8px; padding: 10px 20px; font-size: 14px; font-weight: 500;
+      cursor: pointer; display: flex; align-items: center; gap: 6px;
+      text-decoration: none; transition: background 0.2s;
+    }
+    .btn-open-chat:hover { background: var(--navy-mid); }
+    .nav-lang { color: var(--navy); font-size: 14px; font-weight: 500; cursor: pointer; text-decoration: none; }
+
+    /* ── HERO ── */
+    .hero {
+      min-height: 100vh;
+      background: linear-gradient(135deg, var(--navy) 0%, #0d1252 50%, #1a1f8e 100%);
+      display: flex; align-items: center;
+      padding: 100px 80px 60px;
+      position: relative; overflow: hidden;
+    }
+    .hero::before {
+      content: '';
+      position: absolute; inset: 0;
+      background: radial-gradient(ellipse 80% 60% at 60% 50%, rgba(74,85,200,0.3) 0%, transparent 70%);
+      pointer-events: none;
+    }
+    .hero-grid {
+      display: grid; grid-template-columns: 1fr 1fr;
+      align-items: center; gap: 60px;
+      width: 100%; max-width: 1200px; margin: 0 auto;
+      position: relative; z-index: 1;
+    }
+    .hero-badge {
+      display: inline-flex; align-items: center; gap: 6px;
+      background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2);
+      border-radius: 20px; padding: 6px 14px;
+      color: var(--green); font-size: 13px; font-weight: 500;
+      margin-bottom: 24px;
+    }
+    .hero-badge svg { width: 14px; height: 14px; }
+    .hero h1 {
+      font-family: 'Syne', sans-serif;
+      font-size: clamp(42px, 5vw, 68px);
+      font-weight: 800;
+      line-height: 1.1;
+      color: white;
+      margin-bottom: 8px;
+    }
+    .hero h1 .green { color: var(--green); }
+    .hero h1 .product-name { color: white; display: block; }
+    .hero p {
+      color: rgba(255,255,255,0.75);
+      font-size: 17px; line-height: 1.7;
+      max-width: 520px; margin-bottom: 40px;
+    }
+    .hero-cta { display: flex; gap: 16px; flex-wrap: wrap; }
+    .btn-primary {
+      background: var(--green); color: #111;
+      border: none; border-radius: 10px;
+      padding: 14px 28px; font-size: 15px; font-weight: 600;
+      cursor: pointer; display: flex; align-items: center; gap: 8px;
+      text-decoration: none; transition: all 0.2s;
+      font-family: 'DM Sans', sans-serif;
+    }
+    .btn-primary:hover { background: var(--green-mid); transform: translateY(-1px); box-shadow: 0 8px 24px rgba(0,230,118,0.3); }
+    .btn-secondary {
+      background: rgba(255,255,255,0.1); color: white;
+      border: 1px solid rgba(255,255,255,0.25); border-radius: 10px;
+      padding: 14px 28px; font-size: 15px; font-weight: 500;
+      cursor: pointer; text-decoration: none; transition: all 0.2s;
+      font-family: 'DM Sans', sans-serif;
+    }
+    .btn-secondary:hover { background: rgba(255,255,255,0.18); }
+
+    /* Hero visual */
+    .hero-visual {
+      position: relative; display: flex; justify-content: center; align-items: center;
+    }
+    .hero-card {
+      background: linear-gradient(145deg, #2a3490, #1a1f6e);
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 24px; padding: 32px;
+      width: 100%; max-width: 440px;
+      box-shadow: 0 40px 80px rgba(0,0,0,0.4);
+      position: relative; overflow: hidden;
+    }
+    .hero-card::before {
+      content: '';
+      position: absolute; top: -60px; right: -60px;
+      width: 180px; height: 180px;
+      background: radial-gradient(circle, rgba(0,230,118,0.2), transparent 70%);
+      border-radius: 50%;
+    }
+    .hero-card-label {
+      font-size: 11px; font-weight: 600; letter-spacing: 1.5px;
+      text-transform: uppercase; color: var(--green);
+      margin-bottom: 20px; display: flex; align-items: center; gap: 6px;
+    }
+    .hero-card-label::before { content: ''; width: 20px; height: 2px; background: var(--green); display: block; }
+    .code-block {
+      background: rgba(0,0,0,0.3); border-radius: 12px; padding: 20px;
+      font-family: 'Courier New', monospace; font-size: 13px;
+      border: 1px solid rgba(255,255,255,0.06); margin-bottom: 20px;
+    }
+    .code-line { display: flex; gap: 12px; margin-bottom: 6px; }
+    .code-ln { color: rgba(255,255,255,0.2); min-width: 16px; }
+    .code-kw { color: #82aaff; }
+    .code-fn { color: var(--green); }
+    .code-str { color: #f78c6c; }
+    .code-cm { color: rgba(255,255,255,0.35); font-style: italic; }
+    .code-plain { color: rgba(255,255,255,0.75); }
+    .hero-card-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .stat-box {
+      background: rgba(255,255,255,0.05); border-radius: 10px; padding: 12px 14px;
+      border: 1px solid rgba(255,255,255,0.08);
+    }
+    .stat-num { font-family: 'Syne', sans-serif; font-size: 22px; font-weight: 700; color: var(--green); }
+    .stat-label { font-size: 11px; color: rgba(255,255,255,0.5); margin-top: 2px; }
+
+    /* ── FEATURE SECTION ── */
+    .section {
+      padding: 100px 80px;
+      max-width: 1300px; margin: 0 auto;
+    }
+    .section-tag {
+      display: inline-block;
+      background: rgba(26,31,110,0.08); color: var(--navy);
+      border-radius: 20px; padding: 5px 14px;
+      font-size: 11px; font-weight: 600; letter-spacing: 1px; text-transform: uppercase;
+      margin-bottom: 20px;
+    }
+    .section-title {
+      font-family: 'Syne', sans-serif;
+      font-size: clamp(32px, 4vw, 52px);
+      font-weight: 800; color: var(--navy);
+      margin-bottom: 16px; line-height: 1.15;
+    }
+    .section-subtitle {
+      color: var(--gray); font-size: 17px; line-height: 1.6;
+      max-width: 600px; margin: 0 auto 64px;
+    }
+    .section-header { text-align: center; }
+
+    /* Feature grid */
+    .feature-grid {
+      display: grid; grid-template-columns: repeat(3, 1fr);
+      gap: 28px; margin-top: 60px;
+    }
+    .feature-card {
+      background: var(--off-white); border-radius: 20px;
+      padding: 32px; border: 1px solid var(--light-border);
+      transition: all 0.3s; position: relative; overflow: hidden;
+    }
+    .feature-card:hover {
+      transform: translateY(-4px);
+      box-shadow: 0 20px 48px rgba(26,31,110,0.12);
+      border-color: rgba(26,31,110,0.2);
+    }
+    .feature-icon {
+      width: 48px; height: 48px; background: var(--navy);
+      border-radius: 12px; display: flex; align-items: center;
+      justify-content: center; margin-bottom: 20px; font-size: 22px;
+    }
+    .feature-card h3 {
+      font-family: 'Syne', sans-serif; font-size: 18px; font-weight: 700;
+      color: var(--navy); margin-bottom: 10px;
+    }
+    .feature-card p { color: var(--gray); font-size: 14px; line-height: 1.6; }
+
+    /* ── USE CASE SECTION ── */
+    .usecase-section {
+      background: var(--off-white);
+      padding: 100px 80px;
+    }
+    .usecase-inner { max-width: 1200px; margin: 0 auto; }
+    .usecase-grid {
+      display: grid; grid-template-columns: 1fr 1fr;
+      gap: 80px; align-items: center; margin-top: 60px;
+    }
+    .usecase-badge {
+      display: inline-block;
+      background: rgba(26,31,110,0.08); color: var(--navy);
+      border-radius: 6px; padding: 4px 12px;
+      font-size: 11px; font-weight: 600; letter-spacing: 1px;
+      text-transform: uppercase; margin-bottom: 20px;
+    }
+    .usecase-grid h2 {
+      font-family: 'Syne', sans-serif; font-size: 38px;
+      font-weight: 800; color: var(--navy); margin-bottom: 12px;
+    }
+    .usecase-sub { color: var(--navy); font-size: 18px; font-weight: 500; margin-bottom: 16px; }
+    .usecase-org {
+      display: inline-flex; align-items: center; gap: 6px;
+      background: rgba(26,31,110,0.06); border: 1px solid rgba(26,31,110,0.1);
+      border-radius: 20px; padding: 5px 12px;
+      font-size: 12px; color: var(--navy); margin-bottom: 20px;
+    }
+    .usecase-desc { color: var(--gray); font-size: 15px; line-height: 1.7; margin-bottom: 28px; }
+    .checklist { list-style: none; display: flex; flex-direction: column; gap: 12px; }
+    .checklist li {
+      display: flex; align-items: flex-start; gap: 10px;
+      font-size: 14px; color: #333; line-height: 1.5;
+    }
+    .checklist li::before {
+      content: '✅'; font-size: 14px; flex-shrink: 0; margin-top: 1px;
+    }
+    .usecase-visual {
+      background: linear-gradient(135deg, var(--navy), #0f154f);
+      border-radius: 24px; padding: 36px;
+      box-shadow: 0 30px 60px rgba(26,31,110,0.25);
+      position: relative; overflow: hidden;
+    }
+    .usecase-visual::after {
+      content: '</>';
+      position: absolute; bottom: 20px; right: 24px;
+      font-family: 'Syne', sans-serif; font-size: 72px; font-weight: 800;
+      color: rgba(255,255,255,0.04); line-height: 1;
+    }
+    .query-item {
+      background: rgba(255,255,255,0.06); border-radius: 10px;
+      padding: 14px 16px; margin-bottom: 12px;
+      border-left: 3px solid var(--green);
+      font-size: 13px; color: rgba(255,255,255,0.85); line-height: 1.5;
+      font-style: italic;
+    }
+    .query-answer {
+      background: rgba(0,230,118,0.08); border-radius: 10px;
+      padding: 14px 16px; margin-bottom: 12px;
+      border: 1px solid rgba(0,230,118,0.2);
+      font-size: 13px; color: rgba(255,255,255,0.75); line-height: 1.5;
+    }
+    .answer-label { color: var(--green); font-size: 11px; font-weight: 600; margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.5px; }
+
+    /* ── AI SECTION ── */
+    .ai-section {
+      padding: 100px 80px;
+      max-width: 1300px; margin: 0 auto;
+    }
+    .ai-grid {
+      display: grid; grid-template-columns: 1fr 1fr;
+      gap: 80px; align-items: center;
+    }
+    .ai-visual {
+      background: var(--off-white); border-radius: 24px; padding: 36px;
+      border: 1px solid var(--light-border);
+    }
+    .ai-tag { font-size: 11px; font-weight: 600; color: var(--navy); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 16px; }
+    .ai-visual h3 { font-family: 'Syne', sans-serif; font-size: 26px; font-weight: 700; color: var(--navy); margin-bottom: 24px; }
+    .pill-grid { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 28px; }
+    .pill {
+      background: white; border: 1px solid var(--light-border);
+      border-radius: 20px; padding: 6px 14px;
+      font-size: 13px; color: var(--navy); font-weight: 500;
+    }
+    .pill.active { background: var(--navy); color: white; border-color: var(--navy); }
+    .progress-item { margin-bottom: 16px; }
+    .progress-label { display: flex; justify-content: space-between; font-size: 13px; color: var(--gray); margin-bottom: 6px; }
+    .progress-bar { height: 6px; background: #e5e7eb; border-radius: 3px; overflow: hidden; }
+    .progress-fill { height: 100%; background: var(--navy); border-radius: 3px; }
+    .progress-fill.green { background: var(--green); }
+
+    .ai-content .section-tag { text-align: left; }
+    .ai-content .section-title { text-align: left; font-size: 38px; }
+    .ai-content .section-subtitle { text-align: left; margin: 0 0 32px; }
+    .checklist-inline { list-style: none; display: flex; flex-direction: column; gap: 10px; }
+    .checklist-inline li { display: flex; align-items: flex-start; gap: 10px; font-size: 14px; color: #333; }
+    .checklist-inline li::before { content: '✅'; flex-shrink: 0; }
+
+    /* ── CTA ── */
+    .cta-section {
+      background: linear-gradient(135deg, var(--navy), #0d1252);
+      padding: 100px 80px; text-align: center; position: relative; overflow: hidden;
+    }
+    .cta-section::before {
+      content: '';
+      position: absolute; top: -100px; left: 50%;
+      transform: translateX(-50%);
+      width: 600px; height: 600px;
+      background: radial-gradient(circle, rgba(0,230,118,0.1), transparent 60%);
+      pointer-events: none;
+    }
+    .cta-section h2 {
+      font-family: 'Syne', sans-serif; font-size: 52px; font-weight: 800;
+      color: white; margin-bottom: 16px; position: relative;
+    }
+    .cta-section h2 span { color: var(--green); }
+    .cta-section p { color: rgba(255,255,255,0.7); font-size: 18px; margin-bottom: 40px; position: relative; }
+    .cta-btns { display: flex; gap: 16px; justify-content: center; position: relative; }
+
+    /* ── FOOTER ── */
+    footer {
+      background: var(--navy); color: rgba(255,255,255,0.5);
+      padding: 20px 80px; display: flex;
+      justify-content: space-between; align-items: center; font-size: 12px;
+    }
+    footer span { color: rgba(255,255,255,0.7); }
+
+    /* Animations */
+    @keyframes fadeUp {
+      from { opacity: 0; transform: translateY(30px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    .hero-content > * { animation: fadeUp 0.6s ease both; }
+    .hero-content > *:nth-child(1) { animation-delay: 0.1s; }
+    .hero-content > *:nth-child(2) { animation-delay: 0.2s; }
+    .hero-content > *:nth-child(3) { animation-delay: 0.35s; }
+    .hero-content > *:nth-child(4) { animation-delay: 0.45s; }
+    .hero-visual { animation: fadeUp 0.8s 0.3s ease both; }
+
+    /* Floating dots bg */
+    .dots-bg {
+      position: absolute; inset: 0; pointer-events: none; overflow: hidden;
+    }
+    .dot {
+      position: absolute; border-radius: 50%;
+      background: rgba(255,255,255,0.04);
+      animation: float 8s ease-in-out infinite;
+    }
+    @keyframes float {
+      0%, 100% { transform: translateY(0); }
+      50% { transform: translateY(-20px); }
+    }
+  </style>
+</head>
+<body>
+
+<!-- NAV -->
+<nav>
+  <a class="nav-logo" href="#">
+    <svg viewBox="0 0 36 36" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <rect width="36" height="36" rx="8" fill="#1a1f6e"/>
+      <path d="M10 18 L16 12 L22 18 L16 24Z" fill="#00e676"/>
+      <circle cx="24" cy="18" r="4" fill="white" opacity="0.9"/>
+    </svg>
+    <span>ejada</span>
+  </a>
+  <div class="nav-links">
+    <a href="#features">Features</a>
+    <a href="#usecases">Use Cases</a>
+    <a href="#about">About</a>
+  </div>
+  <div class="nav-right">
+    <a href="http://192.168.224.44:4070" class="btn-open-chat">💬 Open Chat</a>
+    <a href="#" class="nav-lang">العربية</a>
+  </div>
+</nav>
+
+<!-- HERO -->
+<section class="hero">
+  <div class="dots-bg">
+    <div class="dot" style="width:120px;height:120px;top:10%;left:5%;animation-delay:0s;"></div>
+    <div class="dot" style="width:60px;height:60px;top:60%;left:3%;animation-delay:2s;"></div>
+    <div class="dot" style="width:80px;height:80px;top:20%;right:10%;animation-delay:4s;"></div>
+    <div class="dot" style="width:40px;height:40px;bottom:15%;right:5%;animation-delay:1s;"></div>
+  </div>
+  <div class="hero-grid">
+    <div class="hero-content">
+      <div class="hero-badge">
+        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+        Powered by Advanced AI
+      </div>
+      <h1>
+        <span class="green">ejada Smart</span>
+        <span class="green">Assistant</span>
+        <span class="product-name">Code Mind</span>
+      </h1>
+      <p>Enterprise AI-powered code reverse engineering assistant. Understand complex codebases instantly — file-level, class-level, and method-level insights with intelligent relationship analysis and semantic search.</p>
+      <div class="hero-cta">
+        <a href="http://192.168.224.44:4070" class="btn-primary">Try the Assistant →</a>
+        <a href="#usecases" class="btn-secondary">Explore Use Cases</a>
+      </div>
+    </div>
+    <div class="hero-visual">
+      <div class="hero-card">
+        <div class="hero-card-label">Live Code Analysis</div>
+        <div class="code-block">
+          <div class="code-line"><span class="code-ln">1</span><span class="code-cm">// Ask Code Mind anything</span></div>
+          <div class="code-line"><span class="code-ln">2</span><span class="code-kw">class </span><span class="code-fn">SamaRbsServices</span><span class="code-plain"> {</span></div>
+          <div class="code-line"><span class="code-ln">3</span><span class="code-plain">  </span><span class="code-fn">blockParty</span><span class="code-plain">(id) {</span></div>
+          <div class="code-line"><span class="code-ln">4</span><span class="code-plain">    </span><span class="code-kw">return </span><span class="code-fn">this</span><span class="code-plain">.api.</span><span class="code-fn">block</span><span class="code-plain">(id);</span></div>
+          <div class="code-line"><span class="code-ln">5</span><span class="code-plain">  }</span></div>
+          <div class="code-line"><span class="code-ln">6</span><span class="code-fn">}</span></div>
+        </div>
+        <div class="hero-card-stats">
+          <div class="stat-box">
+            <div class="stat-num">100%</div>
+            <div class="stat-label">Semantic Search</div>
+          </div>
+          <div class="stat-box">
+            <div class="stat-num">∞</div>
+            <div class="stat-label">Codebase Size</div>
+          </div>
+          <div class="stat-box">
+            <div class="stat-num">&lt;2s</div>
+            <div class="stat-label">Response Time</div>
+          </div>
+          <div class="stat-box">
+            <div class="stat-num">RAG</div>
+            <div class="stat-label">Graph-Powered</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- FEATURES -->
+<section class="section" id="features">
+  <div class="section-header">
+    <div class="section-tag">Features</div>
+    <h2 class="section-title">Specialized AI Assistant<br>for Code Engineering</h2>
+    <p class="section-subtitle">Explore how leading organizations leverage Code Mind to deeply understand and reverse engineer complex software systems.</p>
+  </div>
+  <div class="feature-grid">
+    <div class="feature-card">
+      <div class="feature-icon">🔍</div>
+      <h3>Code Understanding</h3>
+      <p>File-level, class-level, and method-level questions answered instantly. Ask very specific and detailed implementation questions with precise, contextual answers.</p>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">🧠</div>
+      <h3>Semantic Search</h3>
+      <p>Search your codebase by meaning, not just keywords. Find the method that "blocks a party" or code related to "debit cards" without knowing exact function names.</p>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">🔗</div>
+      <h3>Relationship Analysis</h3>
+      <p>Understand method-to-method calling relationships, all methods inside a class, and dependencies across files — visualized as a knowledge graph.</p>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">📝</div>
+      <h3>Code Review</h3>
+      <p>Get positive and negative feedback on code quality. Receive actionable suggestions to improve readability, maintainability, and overall engineering standards.</p>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">⚡</div>
+      <h3>Business Rule Extraction</h3>
+      <p>Automatically extract and explain business rules embedded in code. Understand what <code style="background:#eee;padding:1px 5px;border-radius:4px;">BkOrdInq</code> does in plain language, instantly.</p>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">🛡️</div>
+      <h3>Enterprise Security</h3>
+      <p>Following OWASP Top 10 for LLM Applications & Generative AI. Built on enterprise-grade infrastructure with strict data isolation and compliance standards.</p>
+    </div>
+  </div>
+</section>
+
+<!-- USE CASE -->
+<section class="usecase-section" id="usecases">
+  <div class="usecase-inner">
+    <div class="section-header">
+      <div class="section-tag">Use Cases</div>
+      <h2 class="section-title">Specialized AI Assistants</h2>
+      <p class="section-subtitle">Explore how leading organizations leverage ejada Smart Assistant across different use cases.</p>
+    </div>
+    <div class="usecase-grid">
+      <div>
+        <div class="usecase-badge">Code Reverse Engineering Assistant</div>
+        <h2>Code Mind</h2>
+        <div class="usecase-sub">Smart Assistant for Code Reverse Engineering</div>
+        <div class="usecase-org">🏗️ Software Engineering Teams</div>
+        <p class="usecase-desc">Code Mind is the dedicated smart assistant developed by ejada for deep code analysis and reverse engineering. Designed to support developers and architects with comprehensive insights about codebases — structure, functions, procedures, and business rules.</p>
+        <ul class="checklist">
+          <li>General inquiries about codebase structure and functions</li>
+          <li>Method-level and class-level deep analysis</li>
+          <li>Semantic search across the entire repository</li>
+          <li>Method-to-method calling relationship maps</li>
+          <li>Business rule extraction from legacy code</li>
+          <li>Code quality review and improvement suggestions</li>
+        </ul>
+      </div>
+      <div class="usecase-visual">
+        <div class="query-item">"What are the methods in the SamaRbsServices class?"</div>
+        <div class="query-answer">
+          <div class="answer-label">Code Mind</div>
+          The SamaRbsServices class contains: <strong>authenticate()</strong>, <strong>blockParty()</strong>, <strong>getDebitCards()</strong>, and 4 other methods. Shall I explain any of them?
+        </div>
+        <div class="query-item">"What are the business rules for BkOrdInq?"</div>
+        <div class="query-answer">
+          <div class="answer-label">Code Mind</div>
+          BkOrdInq validates order status before processing. Key rules: (1) Order must be active, (2) Balance check required, (3) Audit log on every inquiry.
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- AI SECTION -->
+<section class="ai-section" id="about">
+  <div class="ai-grid">
+    <div class="ai-visual">
+      <div class="ai-tag">Artificial Intelligence</div>
+      <h3>ejada Smart Assistant</h3>
+      <div class="pill-grid">
+        <div class="pill active">Code Analysis</div>
+        <div class="pill active">Graph RAG</div>
+        <div class="pill">Arabic</div>
+        <div class="pill">English</div>
+        <div class="pill active">Semantic Search</div>
+        <div class="pill">Enterprise</div>
+      </div>
+      <div class="progress-item">
+        <div class="progress-label"><span>Code Understanding</span><span>98%</span></div>
+        <div class="progress-bar"><div class="progress-fill" style="width:98%"></div></div>
+      </div>
+      <div class="progress-item">
+        <div class="progress-label"><span>Relationship Mapping</span><span>95%</span></div>
+        <div class="progress-bar"><div class="progress-fill green" style="width:95%"></div></div>
+      </div>
+      <div class="progress-item">
+        <div class="progress-label"><span>Business Rule Extraction</span><span>92%</span></div>
+        <div class="progress-bar"><div class="progress-fill" style="width:92%"></div></div>
+      </div>
+      <div class="progress-item">
+        <div class="progress-label"><span>Semantic Search Accuracy</span><span>97%</span></div>
+        <div class="progress-bar"><div class="progress-fill green" style="width:97%"></div></div>
+      </div>
+    </div>
+    <div class="ai-content">
+      <div class="section-tag">About</div>
+      <h2 class="section-title">ejada Smart Assistant</h2>
+      <p class="section-subtitle">Code Mind is an enterprise-grade conversational AI platform designed to enhance developer productivity, streamline code comprehension, and deliver exceptional insights across your engineering organization.</p>
+      <ul class="checklist-inline">
+        <li>Deep code-centric analysis tailored to specific workflows</li>
+        <li>Comprehensive Arabic and English language support</li>
+        <li>Seamless integration with existing enterprise systems</li>
+        <li>Enterprise-grade security and compliance standards</li>
+        <li>Continuous learning and improvement through AI</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- CTA -->
+<section class="cta-section">
+  <h2>Ready to <span>understand</span><br>your codebase?</h2>
+  <p>Start reverse engineering your code with AI — instantly.</p>
+  <div class="cta-btns">
+    <a href="http://192.168.224.44:4070" class="btn-primary">Try the Assistant →</a>
+    <a href="#features" class="btn-secondary">Explore Features</a>
+  </div>
+</section>
+
+<!-- FOOTER -->
+<footer>
+  <span>© 2026 Ejada Systems. All rights reserved.</span>
+  <span>Following OWASP Top 10 for LLM Applications & Generative AI 🔒</span>
+</footer>
+
+</body>
+</html>
